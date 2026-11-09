@@ -2257,6 +2257,15 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
   .sch-agent { min-width: 150px; font-size: 12.5px; }
   .sch-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── SHIFT CHECK NOTICE ── */
+.shift-notice {
+  background: var(--amber-lt); border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent); border-left: 4px solid var(--amber);
+  border-radius: var(--radius-sm); padding: 10px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-1);
+}
+.shift-notice summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; color: var(--amber); }
+.shift-notice summary .i { font-size: 16px; flex-shrink: 0; }
+.shift-notice ul { margin: 8px 0 2px 24px; display: grid; gap: 6px; line-height: 1.5; color: var(--text-2); }
 </style>
 </head>
 <body>
@@ -2875,6 +2884,20 @@ function cellSecs(c){
 }
 function cellText(c){ return c&&c.v!=null?String(c.f!=null&&typeof c.v!=='string'?c.f:c.v).trim():''; }
 
+/* Consolidated column A → "Month YYYY". Handles text ("Nov", "November 2026")
+   and real date cells (gviz sends those as Date(y,m,d), displayed e.g. "Nov"). */
+function monthFromCell(c){
+  if(!c||(c.v==null&&!c.f)) return '';
+  const v=c.v;
+  if(typeof v==='string'&&/^Date\(/.test(v)){ const d=parseSheetDate(v); if(d) return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; }
+  for(const t of [typeof v==='string'?v:null, c.f, v!=null?String(v):null]){
+    if(!t) continue;
+    const m=normMonth(t); if(/^[A-Z][a-z]+ \d{4}$/.test(m)&&MONTHS.includes(m.split(' ')[0])) return m;
+    const d=parseSheetDate(t); if(d) return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  }
+  return '';
+}
+
 /* ── DATE KEYS (local calendar days, "YYYY-MM-DD") ── */
 const pad2=n=>String(n).padStart(2,'0');
 function dayKey(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
@@ -2893,7 +2916,7 @@ let allData=[], currentMonth=MONTHS[_now.getMonth()], currentYear=String(_now.ge
     currentView='monthly', sortCol='totalCalls', sortDir=1, currentSection='team',
     currentShift='all', _firstLoad=true, _lastFocus=null,
     rangeFrom=null, rangeTo=null, dataMinKey=null, dataMaxKey=null,
-    scheduleData=[], scheduleLoaded=false;
+    scheduleData=[], scheduleLoaded=false, shiftNotice=null;
 
 /* Restrict any row set to the selected shift (AM / PM), or pass all through. */
 function applyShift(rows){ return currentShift==='all'?rows:rows.filter(r=>r.shift===currentShift); }
@@ -3065,6 +3088,7 @@ async function loadData(silent=false){
     return;
   }
   const C=CALL_REPORT_COLS, S=SHIFT_COLS;
+  let shiftLoadError='';
   const reportQ=`select ${C.date}, ${C.name}, ${C.inbound}, ${C.inTime}, ${C.outbound}, ${C.outTime}, ${C.talk}, ${C.hold} where ${C.date} is not null`;
   const shiftQ=`select ${S.month}, ${S.name}, ${S.shift} where ${S.name} is not null`;
   try{
@@ -3072,7 +3096,7 @@ async function loadData(silent=false){
     const schedQ=`select ${SC.name}, ${SC.days.join(', ')} where ${SC.name} is not null`;
     const [reportRows,shiftRows,schedRows]=await Promise.all([
       fetchGviz(SHEET_NAME,reportQ),
-      fetchGviz(SHIFT_SHEET_NAME,shiftQ).catch(()=>[]),     // shifts are optional; never block the data
+      fetchGviz(SHIFT_SHEET_NAME,shiftQ).catch(e=>{ shiftLoadError=e.message||'request failed'; return []; }), // never block the data
       fetchGviz(SCHEDULE_SHEET_NAME,schedQ).catch(()=>null)  // so is the schedule
     ]);
     // Shift lookup: agent + month → AM/PM, plus each agent's latest known shift as a fallback
@@ -3081,12 +3105,15 @@ async function loadData(silent=false){
     // ("Joseph Roy Guzman", "Guzman, Roy") still lands on the right agent
     const reportNames=[...new Set(reportRows.map(r=>cellText((r.c||[])[1])).filter(Boolean))];
     const toReportName=n=>{ if(reportNames.includes(n)) return n; const m=matchScheduleName(n,reportNames); return m.matched?m.name:n; };
-    shiftRows.forEach(r=>{
-      const c=r.c||[]; const name=toReportName(cellText(c[1])), sh=estShift(cellText(c[2])), mon=normMonth(cellText(c[0]));
-      if(!name||!sh) return;
+    const diag={rows:shiftRows.length,badMonth:[],badShift:[]};
+    shiftRows.forEach((r,i)=>{
+      const c=r.c||[]; const rawName=cellText(c[1]), name=toReportName(rawName), rawShift=cellText(c[2]);
+      const sh=estShift(rawShift), mon=monthFromCell(c[0]);
+      if(!name) return;
+      if(!mon){ diag.badMonth.push(rawName||'(no name)'); return; }
+      if(!sh){ diag.badShift.push(`${rawName}, ${mon}: "${rawShift}"`); return; }
       shiftByMonth.set(name+'|'+mon,sh);
       const p=mon.split(' '), k=monthSortKey(p[0],p[1]);
-      if(isNaN(k)) return;
       if(!latestShift.has(name)) latestShift.set(name,[]);
       latestShift.get(name).push({k,sh});
     });
@@ -3108,15 +3135,19 @@ async function loadData(silent=false){
     // A month with no row for that agent uses their closest earlier month's
     // shift (or their first one, for months before any row).
     latestShift.forEach(list=>list.sort((a,b)=>a.k-b.k));
+    const noRow=new Set(), noAgent=new Set();
     allData.forEach(r=>{
       const hit=shiftByMonth.get(r.name+'|'+r.month);
       if(hit){ r.shift=hit; return; }
-      const list=latestShift.get(r.name); if(!list){ r.shift=''; return; }
+      const list=latestShift.get(r.name); if(!list){ r.shift=''; noAgent.add(r.name); return; }
+      noRow.add(`${r.name} (${r.month})`);
       const p=r.month.split(' '), k=monthSortKey(p[0],p[1]);
       const before=list.filter(x=>x.k<=k);
       r.shift=(before.length?before[before.length-1]:list[0]).sh;
     });
     buildSchedule(schedRows);
+    shiftNotice={error:shiftLoadError,badMonth:diag.badMonth,badShift:diag.badShift,noRow:[...noRow],noAgent:[...noAgent]};
+    if(shiftLoadError||diag.badMonth.length||diag.badShift.length||noRow.size||noAgent.size) console.info('Shift check (Consolidated column J):',shiftNotice);
     const agents=[...new Set(allData.map(d=>d.name))].sort();
     const sel=document.getElementById('filter-agent');
     const prev=sel.value;
@@ -3131,7 +3162,7 @@ async function loadData(silent=false){
     if(dataMinKey) document.getElementById('range-from').min=dataMinKey;
     set('info-synced',new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}));
     document.querySelector('.sync-status')?.classList.remove('is-stale');
-    document.getElementById('error-area').innerHTML='';
+    document.getElementById('error-area').innerHTML=shiftNoticeHTML();
     _anim=!silent;
     renderAll();
   }catch(e){
@@ -3171,6 +3202,8 @@ function agentMonthRows(name){
   }).sort((a,b)=>(a.yearNum-b.yearNum)||(a.monthIdx-b.monthIdx));
 }
 function inRange(r){ return r.dateKey>=rangeFrom&&r.dateKey<=rangeTo; }
+// Same period as scopedRows(), ignoring the shift filter
+function applyShiftAll(){ return currentView==='monthly'?allData.filter(monthMatches):currentView==='range'?allData.filter(inRange):allData; }
 function scopedRows(){ return applyShift(currentView==='monthly'?allData.filter(monthMatches):currentView==='range'?allData.filter(inRange):allData); }
 // Rows for "this period" in month-or-range views (All time falls back to the selected month)
 function periodRows(){ return currentView==='range'?scopedRows():applyShift(allData.filter(monthMatches)); }
@@ -3338,7 +3371,9 @@ function renderLeaderboard(){
     const q=(document.getElementById('lb-search')?.value||'').trim();
     wrap.innerHTML=q
       ?`<div class="empty-state">${ic('search')}<div class="empty-state-title">No agents match "${esc(q)}"</div><div class="empty-state-sub">Check the spelling or clear the filter to see everyone.</div></div>`
-      :`<div class="empty-state">${ic('inbox')}<div class="empty-state-title">No data for ${esc(scopeLabel())}</div><div class="empty-state-sub">Nothing has been recorded for this period and shift yet. Pick a different month or date range, choose All shifts, or switch to All time.</div></div>`;
+      :(currentShift!=='all'&&applyShiftAll().length)
+        ?`<div class="empty-state">${ic('inbox')}<div class="empty-state-title">No agents on the ${esc(SHIFT_LABELS[currentShift])} for ${esc(periodLabel())}</div><div class="empty-state-sub">There are calls for this period, but none of the agents are tagged with this shift. Shifts come from column ${SHIFT_COLS.shift} of the ${esc(SHIFT_SHEET_NAME)} tab. Check the notice at the top of the page, or choose All shifts.</div></div>`
+        :`<div class="empty-state">${ic('inbox')}<div class="empty-state-title">No data for ${esc(scopeLabel())}</div><div class="empty-state-sub">Nothing has been recorded for this period and shift yet. Pick a different month or date range, choose All shifts, or switch to All time.</div></div>`;
     return;
   }
   rows=[...rows].sort((a,b)=>{
@@ -3712,6 +3747,20 @@ function renderPerfTracker(agentName,rows,cur,monthAgg){
   vs('inbound',cur?cur.inbound:0,avg('inbound'),num);
   vs('outbound',cur?cur.outbound:0,avg('outbound'),num);
   vs('aht',curAht,teamAht,fmtMS,true);
+}
+
+/* ── SHIFT CHECK NOTICE: says plainly when Consolidated rows can't be used ── */
+function shiftNoticeHTML(){
+  const n=shiftNotice; if(!n) return '';
+  const list=(a,max=6)=>esc(a.slice(0,max).join('; '))+(a.length>max?` and ${a.length-max} more`:'');
+  const parts=[];
+  if(n.error) parts.push(`The ${esc(SHIFT_SHEET_NAME)} tab couldn't be read (${esc(n.error)}), so no shifts are tagged.`);
+  if(n.badMonth.length) parts.push(`${n.badMonth.length} ${esc(SHIFT_SHEET_NAME)} row${n.badMonth.length>1?'s have':' has'} a month in column ${SHIFT_COLS.month} that couldn't be read, for ${list(n.badMonth)}. This usually means the column mixes text and dates. Make every cell plain text like "Nov".`);
+  if(n.badShift.length) parts.push(`${n.badShift.length} row${n.badShift.length>1?'s have':' has'} a shift in column ${SHIFT_COLS.shift} that isn't 9AM - 6PM or 12AM - 9AM: ${list(n.badShift)}.`);
+  if(n.noRow.length) parts.push(`No ${esc(SHIFT_SHEET_NAME)} row for ${list(n.noRow)}. Their closest earlier month's shift is used.`);
+  if(n.noAgent.length) parts.push(`Not on the ${esc(SHIFT_SHEET_NAME)} tab at all, so shown under All shifts only: ${list(n.noAgent)}.`);
+  if(!parts.length) return '';
+  return `<details class="shift-notice"><summary>${ic('info')}Some shifts couldn't be matched from ${esc(SHIFT_SHEET_NAME)} column ${SHIFT_COLS.shift}. Show details</summary><ul>${parts.map(p=>`<li>${p}</li>`).join('')}</ul></details>`;
 }
 
 /* ── WEEKLY SCHEDULE ── */
