@@ -2714,7 +2714,9 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
      A Month · B Username · J EST shift ("9AM - 6PM" or "12AM - 9AM")
    A shift starting between 6AM and 5PM EST counts as the 9AM – 6PM shift;
    anything else counts as the 12AM – 9AM shift.
-   If an agent has no row for a month, their latest known shift is used.
+   This is the only source for shifts. Names are matched to the Call
+   Report the same way as the Schedules tab. If an agent has no row for
+   a month, the shift from their closest earlier month is used.
 
    No API key needed — the dashboard reads the sheet's public feed
    and auto-refreshes every 60 seconds.
@@ -3075,12 +3077,18 @@ async function loadData(silent=false){
     ]);
     // Shift lookup: agent + month → AM/PM, plus each agent's latest known shift as a fallback
     const shiftByMonth=new Map(), latestShift=new Map();
+    // Call Report names, so a Consolidated name written differently
+    // ("Joseph Roy Guzman", "Guzman, Roy") still lands on the right agent
+    const reportNames=[...new Set(reportRows.map(r=>cellText((r.c||[])[1])).filter(Boolean))];
+    const toReportName=n=>{ if(reportNames.includes(n)) return n; const m=matchScheduleName(n,reportNames); return m.matched?m.name:n; };
     shiftRows.forEach(r=>{
-      const c=r.c||[]; const name=cellText(c[1]), sh=estShift(cellText(c[2])), mon=normMonth(cellText(c[0]));
+      const c=r.c||[]; const name=toReportName(cellText(c[1])), sh=estShift(cellText(c[2])), mon=normMonth(cellText(c[0]));
       if(!name||!sh) return;
       shiftByMonth.set(name+'|'+mon,sh);
       const p=mon.split(' '), k=monthSortKey(p[0],p[1]);
-      const prev=latestShift.get(name); if(!prev||k>=prev.k) latestShift.set(name,{k,sh});
+      if(isNaN(k)) return;
+      if(!latestShift.has(name)) latestShift.set(name,[]);
+      latestShift.get(name).push({k,sh});
     });
     allData=reportRows.map(r=>{
       const c=r.c||[];
@@ -3093,10 +3101,22 @@ async function loadData(silent=false){
       // No AHT column used → derive it: (talk + hold) / total calls.
       const aht=totalCalls>0?Math.round((talkTime+holdTime)/totalCalls):0;
       const month=`${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-      const shift=shiftByMonth.get(name+'|'+month)||(latestShift.get(name)||{}).sh||'';
       return { date:d, dateKey:dayKey(d), month, name, inbound, inboundTime:cellSecs(c[3]), outbound, outboundTime:cellSecs(c[5]),
-        talkTime, holdTime, aht, shift, totalCalls };
+        talkTime, holdTime, aht, shift:'', totalCalls };
     }).filter(Boolean);
+    // Shift per agent per month comes only from Consolidated column J.
+    // A month with no row for that agent uses their closest earlier month's
+    // shift (or their first one, for months before any row).
+    latestShift.forEach(list=>list.sort((a,b)=>a.k-b.k));
+    allData.forEach(r=>{
+      const hit=shiftByMonth.get(r.name+'|'+r.month);
+      if(hit){ r.shift=hit; return; }
+      const list=latestShift.get(r.name); if(!list){ r.shift=''; return; }
+      const p=r.month.split(' '), k=monthSortKey(p[0],p[1]);
+      const before=list.filter(x=>x.k<=k);
+      r.shift=(before.length?before[before.length-1]:list[0]).sh;
+    });
+    buildSchedule(schedRows);
     const agents=[...new Set(allData.map(d=>d.name))].sort();
     const sel=document.getElementById('filter-agent');
     const prev=sel.value;
@@ -3105,7 +3125,6 @@ async function loadData(silent=false){
     document.getElementById('agent-options').innerHTML=agents.map(a=>`<option value="${esc(a)}"></option>`).join('');
     syncAgentSearch();
     _firstLoad=false;
-    buildSchedule(schedRows);
     const keys=allData.map(r=>r.dateKey).sort();
     dataMinKey=keys[0]||null; dataMaxKey=keys[keys.length-1]||null;
     set('info-latest',dataMaxKey?fmtDay(dataMaxKey):'–');
@@ -3726,7 +3745,10 @@ function buildSchedule(rows){
     const c=r.c||[]; const raw=cellText(c[0]); if(!raw) return null;
     const m=matchScheduleName(raw,known);
     const days=SCHEDULE_DAYS.map((_,i)=>schedCell(cellText(c[i+1])));
-    return {name:m.name,matched:m.matched,raw,days,shifts:new Set(days.map(d=>d.shift).filter(Boolean)),workDays:days.filter(d=>d.kind!=='off').length};
+    // Main shift = the one worked on most days this week (ties go to 9AM – 6PM)
+    const nDay=days.filter(d=>d.shift==='DAY').length, nNight=days.filter(d=>d.shift==='NIGHT').length;
+    const mainShift=nDay||nNight?(nDay>=nNight?'DAY':'NIGHT'):'';
+    return {name:m.name,matched:m.matched,raw,days,mainShift,shifts:new Set(days.map(d=>d.shift).filter(Boolean)),workDays:days.filter(d=>d.kind!=='off').length};
   }).filter(Boolean);
 }
 // Index into SCHEDULE_DAYS (Mon = 0) for today in Eastern time
