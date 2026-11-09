@@ -2205,6 +2205,58 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
   .date-field { flex: 1 1 50%; height: 36px; }
   .date-field + .date-field { border-left: 1px solid var(--border); }
 }
+
+/* ── WEEKLY SCHEDULE ── */
+.sch-wrap { overflow-x: auto; }
+.sch-table th { cursor: default; }
+.sch-table th:hover { color: var(--text-4); }
+.sch-table thead th { text-align: center; }
+.sch-table thead th.sch-agent-h { text-align: left; padding-left: 16px; position: sticky; left: 0; z-index: 2; background: var(--surface2); }
+.sch-table thead th.is-today { color: var(--brand); }
+.sch-table td { text-align: center; padding: 8px 6px; }
+.sch-table td.is-today, .sch-table thead th.is-today { background: color-mix(in srgb, var(--brand) 8%, var(--surface)); }
+.sch-table tbody tr:hover td.is-today { background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
+.sch-agent {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 16px; text-align: left; text-transform: none;
+  letter-spacing: 0; font-size: 13px; font-weight: 600; color: var(--text-1); cursor: default; position: sticky; left: 0;
+  background: var(--surface); z-index: 1; border-bottom: 1px solid var(--border); min-width: 190px;
+}
+.sch-table tbody tr:last-child .sch-agent { border-bottom: 0; }
+.sch-table tbody tr:hover .sch-agent { background: var(--surface2); }
+.sch-name { color: var(--text-3); }
+.sch-d-short { display: none; }
+.sch-pill {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; white-space: nowrap;
+  padding: 3px 9px; border-radius: 20px; border: 1px solid transparent;
+}
+.sch-pill .i, .sch-day-val .i { font-size: 12px; }
+.sch-pill.sch-day   { background: var(--brand-lt);  color: var(--brand); }
+.sch-pill.sch-night { background: var(--indigo-lt); color: var(--indigo); }
+.sch-pill.sch-other { background: var(--amber-lt);  color: var(--amber); }
+.sch-pill.sch-off   { background: transparent; color: var(--text-4); border-color: var(--border); font-weight: 600; }
+.sch-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.sch-tile {
+  border-radius: var(--radius-sm); padding: 10px 10px 12px; border: 1px solid var(--border); background: var(--surface2);
+}
+.sch-tile.sch-day   { background: var(--brand-lt);  border-color: transparent; }
+.sch-tile.sch-night { background: var(--indigo-lt); border-color: transparent; }
+.sch-tile.sch-other { background: var(--amber-lt);  border-color: transparent; }
+.sch-tile.is-today { box-shadow: 0 0 0 2px var(--brand); }
+.sch-day-name { font-size: 12px; font-weight: 600; color: var(--text-3); display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.sch-today-tag { font-size: 10.5px; font-weight: 700; color: #fff; background: var(--brand); border-radius: 10px; padding: 0 6px; }
+.sch-day-val { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; color: var(--text-1); }
+.sch-tile.sch-day .sch-day-val { color: var(--brand); }
+.sch-tile.sch-night .sch-day-val { color: var(--indigo); }
+.sch-tile.sch-off .sch-day-val { color: var(--text-4); font-weight: 600; }
+#schedule-card[hidden] { display: none; }
+@media (max-width: 900px) {
+  .sch-d-long { display: none; } .sch-d-short { display: inline; }
+  .sch-week { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .sch-agent { min-width: 150px; font-size: 12.5px; }
+  .sch-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 </style>
 </head>
 <body>
@@ -2341,8 +2393,8 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
     </div>
     <div class="view-toggle" role="group" aria-label="Shift">
       <button class="btn-toggle active" id="btn-shift-all" onclick="setShift('all')" aria-pressed="true">All shifts</button>
-      <button class="btn-toggle" id="btn-shift-pm" onclick="setShift('PM')" aria-pressed="false" title="Day shift, 9AM to 6PM Eastern"><svg class="i"><use href="#i-sun"/></svg>9AM – 6PM EST</button>
-      <button class="btn-toggle" id="btn-shift-am" onclick="setShift('AM')" aria-pressed="false" title="Overnight shift, 12AM to 9AM Eastern"><svg class="i"><use href="#i-moon"/></svg>12AM – 9AM EST</button>
+      <button class="btn-toggle" id="btn-shift-pm" onclick="setShift('DAY')" aria-pressed="false" title="Day shift, 9AM to 6PM Eastern"><svg class="i"><use href="#i-sun"/></svg>9AM – 6PM EST</button>
+      <button class="btn-toggle" id="btn-shift-am" onclick="setShift('NIGHT')" aria-pressed="false" title="Overnight shift, 12AM to 9AM Eastern"><svg class="i"><use href="#i-moon"/></svg>12AM – 9AM EST</button>
     </div>
     <div class="agent-picker" id="agent-filter-group" hidden>
       <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
@@ -2420,6 +2472,17 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
         <div class="lb-footnote">Select an agent's name to open their page.</div>
       </section>
 
+      <section class="leaderboard-card" id="schedule-card" aria-labelledby="sch-heading">
+        <div class="lb-header">
+          <div>
+            <h2 class="lb-title" id="sch-heading"><svg class="i" style="color:var(--brand)"><use href="#i-calendar"/></svg>Weekly schedule <span class="lb-period">EST</span></h2>
+            <div class="lb-sort" id="sch-today" aria-live="polite">—</div>
+          </div>
+        </div>
+        <div class="sch-wrap" id="sch-wrap"><div class="loading"><div class="spinner"></div> Loading schedule…</div></div>
+        <div class="lb-footnote">From the Schedules tab. Today's column is highlighted, based on the current day in Eastern time.</div>
+      </section>
+
       <div class="charts-row">
         <section class="panel" aria-labelledby="inbound-chart-title">
           <div class="card-header"><h2 class="card-title" id="inbound-chart-title">Inbound calls by agent</h2><span class="card-meta" id="inbound-chart-total"></span></div>
@@ -2492,6 +2555,10 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
           <div class="highlight-card"><div class="hc-eyebrow"><svg class="i" style="color:var(--m-inbound)"><use href="#i-trend-up"/></svg><span id="a-trend-label">Calls vs previous month</span></div><div class="hc-name" id="a-trend">—</div><div class="hc-sub" id="a-trend-sub">—</div></div>
           <div class="highlight-card"><div class="hc-eyebrow"><svg class="i" style="color:var(--ok)"><use href="#i-star"/></svg>Best month, all time</div><div class="hc-name" id="a-best">—</div><div class="hc-sub" id="a-best-sub">—</div></div>
         </div>
+        <section class="panel" aria-labelledby="a-sch-title">
+          <div class="card-header"><h2 class="card-title" id="a-sch-title"><svg class="i" style="color:var(--brand)"><use href="#i-calendar"/></svg>Weekly schedule <span class="lb-period">EST</span></h2><span class="card-meta" id="a-sch-meta"></span></div>
+          <div class="card-body"><div class="sch-week" id="a-sch-week"></div></div>
+        </section>
         <section class="panel">
           <div class="card-header"><h2 class="card-title"><svg class="i" style="color:var(--brand)"><use href="#i-bars"/></svg>Monthly performance, all time</h2></div>
           <div class="card-body">
@@ -2609,7 +2676,8 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
       <dt>Talk time</dt><dd>Time spent speaking with callers, from the sheet.</dd>
       <dt>Hold time</dt><dd>Time callers spent on hold, from the sheet.</dd>
       <dt>Inbound time</dt><dd>Time spent on inbound calls, from the sheet. Shown in the tables only.</dd>
-      <dt>Shift</dt><dd>9AM – 6PM EST is the day shift; 12AM – 9AM EST is the overnight shift. Each agent's shift comes from the Consolidated tab for that month. Filtering by shift limits every number to that shift.</dd>
+      <dt>Shift</dt><dd>9AM – 6PM EST is the day shift; 12AM – 9AM EST is the overnight shift. Each agent's shift comes from column J (EST) of the Consolidated tab for that month. Filtering by shift limits every number to that shift.</dd>
+      <dt>Weekly schedule</dt><dd>Each agent's working hours for each day of the week, in Eastern time, from the Schedules tab.</dd>
       <dt>Date range</dt><dd>Pick any start and end date to see the team and agent numbers for just those days. Changes are compared with the same number of days right before.</dd>
     </dl>
   </div>
@@ -2643,9 +2711,9 @@ table tbody tr:hover td.heat { box-shadow: inset 0 2px 0 var(--text-1), inset 0 
 
    SHIFT TAB (SHIFT_SHEET_NAME): the Call Report has no shift column, so
    each agent's shift is looked up from this tab by agent + month
-     A Month · B Username · H Shift (PHT): AM or PM
-   PHT AM (12PM – 9PM PHT) = 12AM – 9AM EST
-   PHT PM (9PM – 6AM PHT)  = 9AM – 6PM EST
+     A Month · B Username · J EST shift ("9AM - 6PM" or "12AM - 9AM")
+   A shift starting between 6AM and 5PM EST counts as the 9AM – 6PM shift;
+   anything else counts as the 12AM – 9AM shift.
    If an agent has no row for a month, their latest known shift is used.
 
    No API key needed — the dashboard reads the sheet's public feed
@@ -2655,7 +2723,20 @@ const SHEET_ID         = '1Fhstp9OQUVwp1zUGuUjkPNIrXqNT9YNW-_ORk237HbM';
 const SHEET_NAME       = 'Call Report';
 const SHIFT_SHEET_NAME = 'Consolidated';
 const CALL_REPORT_COLS = { date:'A', name:'C', inbound:'AS', inTime:'AU', outbound:'AV', outTime:'AX', talk:'AZ', hold:'BD' };
-const SHIFT_COLS       = { month:'A', name:'B', shift:'H' };
+const SHIFT_COLS       = { month:'A', name:'B', shift:'J' };
+
+/* SCHEDULE TAB: A Agent ("Last, First Middle") · B–H Monday to Sunday,
+   each cell "9am-6pm", "12am-9am" or "OFF" (Eastern time).
+   Schedule names are matched to Call Report names by surname plus any
+   first or middle name (so "Guzman, Joseph Roy" → "Roy Guzman"), or by
+   surname alone when only one agent has it. If a match comes out wrong,
+   pin it here:  'Schedule name': 'Call Report name'                    */
+const SCHEDULE_SHEET_NAME = 'Schedules';
+const SCHEDULE_COLS       = { name:'A', days:['B','C','D','E','F','G','H'] };
+const SCHEDULE_DAYS       = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const SCHEDULE_NAME_MAP   = {
+  // 'Flores, Gohhan': 'JD Flores',
+};
 
 /* ── Tunable targets / goals (adjust to Banyan's standards) ── */
 const AHT_TARGET_SEC     = 2 * 60;      // AHT goal: 2:00. At/under = healthy (green)
@@ -2713,12 +2794,15 @@ function parseTime(v){
 function fmtTime(sec){ sec=Math.max(0,Math.round(sec||0)); const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60; return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
 function fmtShort(sec){ sec=Math.max(0,Math.round(sec||0)); const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60; return h>0?`${h}h ${String(m).padStart(2,'0')}m`:`${m}m ${String(s).padStart(2,'0')}s`; }
 function parseNum(v){ return parseInt(String(v||'0').replace(/[, ]/g,''))||0; }
-/* Column I → shift bucket. Accepts AM/PM, Morning/Midnight, Night, etc. */
-function normShift(v){
-  const s=String(v||'').trim().toLowerCase();
+/* EST shift text from Consolidated column J → DAY (9AM – 6PM) or NIGHT (12AM – 9AM).
+   Reads the start time, so "9AM - 6PM", "9:00 AM – 6:00 PM" and "12AM-9AM" all work. */
+function estShift(v){
+  const s=String(v||'').toLowerCase().replace(/\s+/g,'');
   if(!s) return '';
-  if(s.includes('am')||s.includes('morning')||s.includes('day')) return 'AM';
-  if(s.includes('pm')||s.includes('mid')||s.includes('night')||s.includes('eve')||s.includes('grave')) return 'PM';
+  const m=s.match(/^(\d{1,2})(?::\d{2})?(am|pm)/);
+  if(m){ const h=(+m[1]%12)+(m[2]==='pm'?12:0); return (h>=6&&h<18)?'DAY':'NIGHT'; }
+  if(/day|morning/.test(s)) return 'DAY';
+  if(/night|mid|grave/.test(s)) return 'NIGHT';
   return '';
 }
 /* Column A → "FullMonth YYYY". The sheet may store just an abbreviation
@@ -2806,14 +2890,15 @@ const _now=new Date();
 let allData=[], currentMonth=MONTHS[_now.getMonth()], currentYear=String(_now.getFullYear()),
     currentView='monthly', sortCol='totalCalls', sortDir=1, currentSection='team',
     currentShift='all', _firstLoad=true, _lastFocus=null,
-    rangeFrom=null, rangeTo=null, dataMinKey=null, dataMaxKey=null;
+    rangeFrom=null, rangeTo=null, dataMinKey=null, dataMaxKey=null,
+    scheduleData=[], scheduleLoaded=false;
 
 /* Restrict any row set to the selected shift (AM / PM), or pass all through. */
 function applyShift(rows){ return currentShift==='all'?rows:rows.filter(r=>r.shift===currentShift); }
-// Sheet stores the shift as PHT AM / PM; shown in Eastern time.
-const SHIFT_LABELS={all:'All shifts',PM:'9AM – 6PM EST shift',AM:'12AM – 9AM EST shift'};
-const SHIFT_SHORT={PM:'9AM – 6PM EST',AM:'12AM – 9AM EST'};
-const shiftNames=set=>[...set].sort((a,b)=>a===b?0:a==='PM'?-1:1).map(x=>SHIFT_SHORT[x]||x).join(' + ');
+// Shift comes from Consolidated column J (Eastern time).
+const SHIFT_LABELS={all:'All shifts',DAY:'9AM – 6PM EST shift',NIGHT:'12AM – 9AM EST shift'};
+const SHIFT_SHORT={DAY:'9AM – 6PM EST',NIGHT:'12AM – 9AM EST'};
+const shiftNames=set=>[...set].sort((a,b)=>a===b?0:a==='DAY'?-1:1).map(x=>SHIFT_SHORT[x]||x).join(' + ');
 
 /* ── SMALL HELPERS ── */
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2862,7 +2947,7 @@ function setToggle(pairs,value){
 }
 function setShift(s){
   currentShift=s;
-  setToggle([['btn-shift-all','all'],['btn-shift-am','AM'],['btn-shift-pm','PM']],s);
+  setToggle([['btn-shift-all','all'],['btn-shift-am','NIGHT'],['btn-shift-pm','DAY']],s);
   renderAnimated();
 }
 function setView(v){
@@ -2981,14 +3066,17 @@ async function loadData(silent=false){
   const reportQ=`select ${C.date}, ${C.name}, ${C.inbound}, ${C.inTime}, ${C.outbound}, ${C.outTime}, ${C.talk}, ${C.hold} where ${C.date} is not null`;
   const shiftQ=`select ${S.month}, ${S.name}, ${S.shift} where ${S.name} is not null`;
   try{
-    const [reportRows,shiftRows]=await Promise.all([
+    const SC=SCHEDULE_COLS;
+    const schedQ=`select ${SC.name}, ${SC.days.join(', ')} where ${SC.name} is not null`;
+    const [reportRows,shiftRows,schedRows]=await Promise.all([
       fetchGviz(SHEET_NAME,reportQ),
-      fetchGviz(SHIFT_SHEET_NAME,shiftQ).catch(()=>[])   // shifts are optional; never block the data
+      fetchGviz(SHIFT_SHEET_NAME,shiftQ).catch(()=>[]),     // shifts are optional; never block the data
+      fetchGviz(SCHEDULE_SHEET_NAME,schedQ).catch(()=>null)  // so is the schedule
     ]);
     // Shift lookup: agent + month → AM/PM, plus each agent's latest known shift as a fallback
     const shiftByMonth=new Map(), latestShift=new Map();
     shiftRows.forEach(r=>{
-      const c=r.c||[]; const name=cellText(c[1]), sh=normShift(cellText(c[2])), mon=normMonth(cellText(c[0]));
+      const c=r.c||[]; const name=cellText(c[1]), sh=estShift(cellText(c[2])), mon=normMonth(cellText(c[0]));
       if(!name||!sh) return;
       shiftByMonth.set(name+'|'+mon,sh);
       const p=mon.split(' '), k=monthSortKey(p[0],p[1]);
@@ -3017,6 +3105,7 @@ async function loadData(silent=false){
     document.getElementById('agent-options').innerHTML=agents.map(a=>`<option value="${esc(a)}"></option>`).join('');
     syncAgentSearch();
     _firstLoad=false;
+    buildSchedule(schedRows);
     const keys=allData.map(r=>r.dateKey).sort();
     dataMinKey=keys[0]||null; dataMaxKey=keys[keys.length-1]||null;
     set('info-latest',dataMaxKey?fmtDay(dataMaxKey):'–');
@@ -3102,7 +3191,7 @@ function renderAll(){
   set('inbound-chart-title',`Inbound calls by agent${inScope}`);
   set('aht-chart-title',`Handle time by agent${inScope}`);
   if(currentSection==='team'){
-    renderStatCards(); renderTopPerformers(); renderLeaderboard();
+    renderStatCards(); renderTopPerformers(); renderLeaderboard(); renderSchedule();
     buildCharts(); renderTrendLineChart(); renderInsights();
   } else if(currentSection==='agent'){
     renderAgentSection();
@@ -3458,6 +3547,7 @@ function renderAgentSection(){
   }
   if(rows.length){ const best=[...rows].sort((a,b)=>b.totalCalls-a.totalCalls)[0]; set('a-best',`${best.monthName} ${best.yearNum}`); set('a-best-sub',`${best.totalCalls.toLocaleString()} calls, ${fmtMS(best.aht)} handle time`); }
   else { set('a-best','—'); set('a-best-sub','No data yet'); }
+  renderAgentSchedule(agentName);
   buildAgentBarChart(rows);
   renderAgentTable(rows);
   renderPerfTracker(agentName,rows,monthCur,monthAgg);
@@ -3605,6 +3695,85 @@ function renderPerfTracker(agentName,rows,cur,monthAgg){
   vs('aht',curAht,teamAht,fmtMS,true);
 }
 
+/* ── WEEKLY SCHEDULE ── */
+const nameTokens=s=>String(s||'').toLowerCase().replace(/[^a-z\s'-]/g,' ').split(/[\s-]+/).filter(Boolean);
+// "Guzman, Joseph Roy" → the Call Report agent it belongs to, or a readable "Joseph Roy Guzman"
+function matchScheduleName(raw,known){
+  raw=String(raw||'').trim();
+  if(SCHEDULE_NAME_MAP[raw]) return {name:SCHEDULE_NAME_MAP[raw],matched:known.includes(SCHEDULE_NAME_MAP[raw])};
+  let last,given;
+  if(raw.includes(',')){ const i=raw.indexOf(','); last=raw.slice(0,i).trim(); given=raw.slice(i+1).trim(); }
+  else { const p=raw.split(/\s+/); last=p.pop()||''; given=p.join(' '); }
+  const lastT=nameTokens(last), givenT=nameTokens(given);
+  const cands=known.filter(k=>{ const t=nameTokens(k); return lastT.length&&lastT.every(x=>t.includes(x)); });
+  const byGiven=cands.filter(k=>nameTokens(k).some(x=>givenT.includes(x)));
+  if(byGiven.length===1) return {name:byGiven[0],matched:true};
+  if(!byGiven.length&&cands.length===1) return {name:cands[0],matched:true};
+  return {name:[given,last].filter(Boolean).join(' '),matched:false};
+}
+function schedCell(v){
+  const text=String(v||'').trim();
+  if(!text||/^off$/i.test(text)||/^(rest|leave|day ?off)$/i.test(text)) return {kind:'off',label:'Off',shift:''};
+  const sh=estShift(text);
+  const label=text.replace(/\s*[-–]\s*/,' – ').replace(/(\d)\s*(am|pm)/gi,(m,d,ap)=>d+ap.toUpperCase());
+  return {kind:sh==='DAY'?'day':sh==='NIGHT'?'night':'other',label,shift:sh};
+}
+function buildSchedule(rows){
+  scheduleLoaded=Array.isArray(rows);
+  if(!scheduleLoaded){ scheduleData=[]; return; }
+  const known=[...new Set(allData.map(d=>d.name))];
+  scheduleData=rows.map(r=>{
+    const c=r.c||[]; const raw=cellText(c[0]); if(!raw) return null;
+    const m=matchScheduleName(raw,known);
+    const days=SCHEDULE_DAYS.map((_,i)=>schedCell(cellText(c[i+1])));
+    return {name:m.name,matched:m.matched,raw,days,shifts:new Set(days.map(d=>d.shift).filter(Boolean)),workDays:days.filter(d=>d.kind!=='off').length};
+  }).filter(Boolean);
+}
+// Index into SCHEDULE_DAYS (Mon = 0) for today in Eastern time
+function estTodayIdx(){
+  let wd;
+  try{ wd=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',weekday:'long'}).format(new Date()); }
+  catch(e){ wd=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()]; }
+  return SCHEDULE_DAYS.indexOf(wd);
+}
+const schIcon=k=>k==='day'?ic('sun'):k==='night'?ic('moon'):'';
+function renderSchedule(){
+  const wrap=document.getElementById('sch-wrap'); if(!wrap) return;
+  const card=document.getElementById('schedule-card');
+  if(!scheduleLoaded){
+    card.hidden=false;
+    wrap.innerHTML=`<div class="empty-state">${ic('calendar')}<div class="empty-state-title">Schedule not available</div><div class="empty-state-sub">The "${esc(SCHEDULE_SHEET_NAME)}" tab couldn't be read. Check the tab name in SCHEDULE_SHEET_NAME.</div></div>`;
+    set('sch-today','—'); return;
+  }
+  const ti=estTodayIdx();
+  let list=scheduleData.filter(a=>currentShift==='all'||a.shifts.has(currentShift));
+  const q=(document.getElementById('lb-search')?.value||'').trim().toLowerCase();
+  if(q) list=list.filter(a=>a.name.toLowerCase().includes(q));
+  // Order: today's day shift, today's overnight shift, then those off today; A–Z within each
+  const rank=a=>{ const k=ti>=0?a.days[ti].kind:'off'; return k==='day'?0:k==='night'?1:k==='other'?2:3; };
+  list=[...list].sort((a,b)=>rank(a)-rank(b)||a.name.localeCompare(b.name));
+  if(ti>=0){
+    const cnt=k=>scheduleData.filter(a=>a.days[ti].kind===k).length;
+    set('sch-today',`Today, ${SCHEDULE_DAYS[ti]}: ${cnt('day')} on 9AM – 6PM, ${cnt('night')} on 12AM – 9AM, ${cnt('off')} off`);
+  }
+  if(!list.length){ wrap.innerHTML=`<div class="empty-state">${ic('calendar')}<div class="empty-state-title">No schedules to show</div><div class="empty-state-sub">${q?'No agent on the schedule matches that name.':'Nobody on the schedule works this shift. Choose All shifts to see everyone.'}</div></div>`; return; }
+  wrap.innerHTML=`<table class="sch-table"><thead><tr><th scope="col" class="sch-agent-h">Agent</th>${SCHEDULE_DAYS.map((d,i)=>`<th scope="col"${i===ti?' class="is-today" aria-current="date"':''}><span class="sch-d-long">${d}</span><span class="sch-d-short">${d.slice(0,3)}</span></th>`).join('')}</tr></thead><tbody>
+    ${list.map(a=>`<tr><th scope="row" class="sch-agent">${avatarHTML(a.name,26,nameColor(a.name))}${a.matched?`<button class="agent-name" data-agent="${esc(a.name)}">${esc(a.name)}</button>`:`<span class="sch-name" title="No call data matched for “${esc(a.raw)}”">${esc(a.name)}</span>`}</th>
+      ${a.days.map((d,i)=>`<td class="${i===ti?'is-today':''}"><span class="sch-pill sch-${d.kind}">${schIcon(d.kind)}${esc(d.label)}</span></td>`).join('')}</tr>`).join('')}
+  </tbody></table>`;
+  wrap.querySelectorAll('.agent-name').forEach(b=>b.addEventListener('click',()=>jumpToAgent(b.dataset.agent)));
+}
+function renderAgentSchedule(name){
+  const el=document.getElementById('a-sch-week'); if(!el) return;
+  const a=scheduleData.find(x=>x.name===name);
+  if(!a){ el.innerHTML=`<div class="hbar-empty">${scheduleLoaded?`No schedule found for ${esc(name)} on the ${esc(SCHEDULE_SHEET_NAME)} tab.`:'Schedule not available.'}</div>`; set('a-sch-meta',''); return; }
+  const ti=estTodayIdx();
+  set('a-sch-meta',`${a.workDays} working day${a.workDays!==1?'s':''} a week`);
+  el.innerHTML=a.days.map((d,i)=>`<div class="sch-tile sch-${d.kind}${i===ti?' is-today':''}"${i===ti?' aria-current="date"':''}>
+    <div class="sch-day-name">${SCHEDULE_DAYS[i].slice(0,3)}${i===ti?' <span class="sch-today-tag">Today</span>':''}</div>
+    <div class="sch-day-val">${schIcon(d.kind)}${esc(d.label)}</div></div>`).join('');
+}
+
 /* ── EXPORT CSV ── */
 function openExportModal(){
   const mSel=document.getElementById('export-month'), aSel=document.getElementById('export-agent');
@@ -3641,7 +3810,7 @@ function doExportCSV(){
   if(!rows.length) lines.push('No data found for the selected filters.');
   const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob),a=document.createElement('a');
-  const shiftPart=currentShift==='all'?'':({AM:'_12AM-9AM_EST',PM:'_9AM-6PM_EST'})[currentShift];
+  const shiftPart=currentShift==='all'?'':({NIGHT:'_12AM-9AM_EST',DAY:'_9AM-6PM_EST'})[currentShift];
   a.href=url; a.download=`Banyan_Agent_Stats_${(mc==='range'?`${rangeFrom}_to_${rangeTo}`:mc==='all'?'AllMonths':mc.replace(' ','_'))}_${(ac==='all'?'AllAgents':ac.replace(/\s+/g,'_'))}${shiftPart}.csv`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); closeExportModal();
 }
