@@ -23,6 +23,8 @@
  *                   minutes, Missed dials). Times can be seconds or h:mm:ss.
  *   SHIFT_TAB       Tab with each agent's shift per month (A Month,
  *                   B Username, J EST shift). Leave '' to turn shifts off.
+ *                   Agents not found there take their shift from the Roster.
+ *   ROSTER_TAB      Tab with A Agent, B Hire Date, C–I Monday–Sunday schedule.
  *   Targets         AHT, answer rate, the work time expected per day and
  *                   how a short day is judged; MAX_LOGIN_SEC for data checks.
  * ===================================================================== */
@@ -30,9 +32,13 @@ window.AGS_CONFIG = {
   CLIENT_NAME: 'Banyan Treatment Center',
   SHEET_ID: '1Fhstp9OQUVwp1zUGuUjkPNIrXqNT9YNW-_ORk237HbM',
   REPORT_TAB: 'Daily Call Report',
-  COLUMN_PINS: { date: 'A', name: 'C', inbound: 'AR', inTime: 'AT', outbound: 'AS', outTime: 'AU', talk: 'AV', hold: 'AX' },
+  COLUMN_PINS: { date: 'A', name: 'C', inbound: 'AR', inTime: 'AT', outbound: 'AS', outTime: 'AU', talk: 'AV', hold: 'AX', ahtSheet: 'AY' },  // ahtSheet = AHT, read as is
   SHIFT_TAB: 'Consolidated',
-  SHIFT_COLS: { month: 'A', name: 'B', shift: 'J' },
+  SHIFT_COLS: { month: 'A', name: 'B', shift: 'H' },
+  // Roster tab: A Agent, B Hire Date, C–I Monday–Sunday ("9am-6pm", "12am-9am" or "Rest Day")
+  ROSTER_TAB: 'Roster',
+  SCHEDULE_TIMEZONE: 'America/New_York',  // schedules are in EST; decides which day is "today"
+  NEW_HIRE_DAYS: 90,                      // hired within this many days = new hire
   AHT_TARGET_SEC: 2 * 60,             // 2:00
   ANSWER_RATE_TARGET: 0.9,            // 90%
   // the "short" rule
@@ -834,6 +840,31 @@ table.t td.num{white-space:nowrap}
 table.t tr.excl td{opacity:.55}
 .kpi .delta{font-size:12px}
 table.t td .delta{white-space:nowrap}
+/* roster */
+.sch{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;line-height:1.5}
+.sch.day{background:var(--accent-soft);color:var(--accent-strong)}
+.sch.night{background:var(--navy-800);color:#E4E9F1}
+.sch.rest{background:var(--neutral-soft);color:var(--muted);font-weight:500}
+.sch.other{background:var(--warn-soft);color:var(--warn)}
+:root[data-theme="dark"] .sch.night{background:#3B2F6B;color:#DCD6FF}
+:root[data-theme="dark"] .sch-dot.night{background:#3B2F6B}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sch.night{background:#3B2F6B;color:#DCD6FF}}
+.sch-dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+.sch-dot.day{background:var(--accent-soft);border:1px solid var(--accent)} .sch-dot.night{background:var(--navy-800)} .sch-dot.rest{background:var(--neutral-soft);border:1px solid var(--line)}
+table.t td.today-col{background:var(--surface-2);box-shadow:inset 2px 0 0 var(--accent),inset -2px 0 0 var(--accent)}
+table.t tfoot tr.cov td{font-weight:400;vertical-align:top}
+table.t tfoot tr.cov td:first-child{font-weight:700}
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.wk{display:flex;flex-direction:column;gap:6px;align-items:flex-start;padding:10px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line-2)}
+.wk small{font-size:12px;color:var(--muted);font-weight:600}
+.wk.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.wk.today small{color:var(--accent)}
+@media (max-width:900px){.week{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:520px){.week{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.rost-wrap table.t td,.rost-wrap table.t th{white-space:nowrap}
+.rost-wrap table.t td{padding-left:8px;padding-right:8px}
+.rost-wrap .sch{padding:2px 7px}
 </style>
 </head>
 <body>
@@ -885,6 +916,7 @@ table.t td .delta{white-space:nowrap}
     sessions: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
     followups: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+    calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
     agents: '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5"/>',
     reports: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
     close: '<path d="M18 6L6 18M6 6l12 12"/>', menu: '<path d="M3 6h18M3 12h18M3 18h18"/>', chev: '<path d="M15 18l-6-6 6-6"/>',
@@ -937,20 +969,21 @@ table.t td .delta{white-space:nowrap}
     rows: [], agents: [], loaded: false, loading: false, error: '', notes: [], syncedAt: null, has: {}, shiftReady: false,
     page: 'overview', period: lsGet('ags_cr_period', 'thismonth'), from: null, to: null, shift: lsGet('ags_cr_shift', 'all'),
     agent: null, timeView: 'avg', excludeFlagged: lsGet('ags_cr_exclude', true), checkCode: 'all', logAgent: 'all', logShort: false, logPage: 0, navCollapsed: lsGet('ags_nav_collapsed', false),
-    sort: { lb: { k: 'calls', d: -1 }, roster: { k: 'calls', d: -1 }, time: { k: 'short', d: -1 }, day: { k: 'date', d: -1 }, log: { k: 'date', d: -1 }, month: { k: 'month', d: -1 }, checks: { k: 'date', d: -1 } },
+    sort: { lb: { k: 'calls', d: -1 }, roster: { k: 'calls', d: -1 }, time: { k: 'short', d: -1 }, day: { k: 'date', d: -1 }, log: { k: 'date', d: -1 }, month: { k: 'month', d: -1 }, checks: { k: 'date', d: -1 }, rost: { k: 'name', d: 1 } },
+    roster: [], rosterOk: false, rosterErr: '',
     minKey: null, maxKey: null
   };
-  var NAV = [['overview', 'Overview', 'dashboard'], ['agents', 'Agents', 'agents'], ['time', 'Time breakdown', 'followups'], ['log', 'Daily log', 'sessions'], ['checks', 'Data checks', 'alert'], ['guide', 'How it’s calculated', 'reports']];
-  var TITLES = { overview: 'Overview', agents: 'Agents', time: 'Time breakdown', log: 'Daily log', checks: 'Data checks', guide: 'How it’s calculated' };
+  var NAV = [['overview', 'Overview', 'dashboard'], ['agents', 'Agents', 'agents'], ['roster', 'Roster', 'calendar'], ['time', 'Time breakdown', 'followups'], ['log', 'Daily log', 'sessions'], ['checks', 'Data checks', 'alert'], ['guide', 'How it’s calculated', 'reports']];
+  var TITLES = { overview: 'Overview', agents: 'Agents', roster: 'Roster', time: 'Time breakdown', log: 'Daily log', checks: 'Data checks', guide: 'How it’s calculated' };
 
   // ---------------- reading the Google Sheet (keyless gviz feed) ----------------
   var FIELDS = {
     date: ['date'], name: ['user name', 'username', 'agent', 'agent name', 'name'],
     inbound: ['inbound calls'], inTime: ['inbound minutes', 'inbound time'], outbound: ['outbound calls'], outTime: ['outbound minutes', 'outbound time'],
     talk: ['talk time'], hold: ['hold time'], online: ['online', 'online time'], session: ['session time'], login: ['login time'],
-    wrap: ['wrap-up total', 'wrapup total', 'wrap up total'], wrapCount: ['wrap-up count', 'wrapup count'], offered: ['offered calls'], missed: ['missed dials', 'missed calls'], meeting: ['meeting total'], brk: ['unscheduled break total']
+    wrap: ['wrap-up total', 'wrapup total', 'wrap up total'], wrapCount: ['wrap-up count', 'wrapup count'], offered: ['offered calls'], missed: ['missed dials', 'missed calls'], ahtSheet: ['aht', 'average handle time', 'avg handle time'], meeting: ['meeting total'], brk: ['unscheduled break total']
   };
-  var TIME_FIELDS = { inTime: 1, outTime: 1, talk: 1, hold: 1, online: 1, session: 1, login: 1, wrap: 1, meeting: 1, brk: 1 };
+  var TIME_FIELDS = { ahtSheet: 1, inTime: 1, outTime: 1, talk: 1, hold: 1, online: 1, session: 1, login: 1, wrap: 1, meeting: 1, brk: 1 };
   var NEEDED = { login: 'Login time', session: 'Session time', online: 'Online', wrap: 'Wrap-up total', offered: 'Offered calls' };
   function normH(s) { return String(s || '').toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
   function gvizUrl(sheet, q) { return 'https://docs.google.com/spreadsheets/d/' + CFG.SHEET_ID + '/gviz/tq?tqx=out:json&headers=1&sheet=' + encodeURIComponent(sheet) + '&tq=' + encodeURIComponent(q); }
@@ -1040,13 +1073,15 @@ table.t td .delta{white-space:nowrap}
     var shiftErr = '';
     Promise.all([
       fetchGviz(CFG.REPORT_TAB, 'select *'),
-      CFG.SHIFT_TAB ? fetchGviz(CFG.SHIFT_TAB, 'select ' + CFG.SHIFT_COLS.month + ', ' + CFG.SHIFT_COLS.name + ', ' + CFG.SHIFT_COLS.shift + ' where ' + CFG.SHIFT_COLS.name + ' is not null').catch(function (e) { shiftErr = e.message; return null; }) : Promise.resolve(null)
+      CFG.SHIFT_TAB ? fetchGviz(CFG.SHIFT_TAB, 'select ' + CFG.SHIFT_COLS.month + ', ' + CFG.SHIFT_COLS.name + ', ' + CFG.SHIFT_COLS.shift + ' where ' + CFG.SHIFT_COLS.name + ' is not null').catch(function (e) { shiftErr = e.message; return null; }) : Promise.resolve(null),
+      CFG.ROSTER_TAB ? fetchGviz(CFG.ROSTER_TAB, 'select A, B, C, D, E, F, G, H, I where A is not null').catch(function (e) { S.rosterErr = e.message; return null; }) : Promise.resolve(null)
     ]).then(function (res) {
       var t = res[0], idx = mapColumns(t.cols || []), notes = [];
       if (idx.date == null || idx.name == null) throw new Error('the “' + CFG.REPORT_TAB + '” tab has no Date or User name column');
       S.has = {}; Object.keys(FIELDS).forEach(function (f) { S.has[f] = idx[f] != null; });
       var miss = Object.keys(NEEDED).filter(function (f) { return !S.has[f]; }).map(function (f) { return NEEDED[f]; });
       if (miss.length) notes.push('These columns weren’t found in the “' + CFG.REPORT_TAB + '” tab, so the numbers that need them show “—”: ' + miss.join(', ') + '. Check the header names in row 1, or pin the column letters in COLUMN_PINS.');
+      if (!S.has.ahtSheet) notes.push('The AHT column (' + (CFG.COLUMN_PINS.ahtSheet ? 'column ' + CFG.COLUMN_PINS.ahtSheet + ' of ' : '') + 'the “' + CFG.REPORT_TAB + '” tab) wasn’t found, so AHT is calculated as (talk time + hold time) ÷ calls instead.');
       var rows = [];
       (t.rows || []).forEach(function (r) {
         var c = r.c || [], cell = function (f) { return idx[f] == null ? null : c[idx[f]]; };
@@ -1059,15 +1094,26 @@ table.t td .delta{white-space:nowrap}
       // shifts per agent per month (closest earlier month when a month is missing)
       var known = Array.from(new Set(rows.map(function (r) { return r.name; })));
       S.shiftReady = false;
+      // the Roster: hire dates and the weekly schedule
+      S.rosterOk = !!res[2]; S.roster = res[2] ? parseRoster(res[2], known) : [];
+      if (CFG.ROSTER_TAB && !res[2]) notes.push('The “' + CFG.ROSTER_TAB + '” tab couldn’t be read (' + (S.rosterErr || 'no data') + '), so the Roster page is empty.');
+      var rosterShift = {}; S.roster.forEach(function (a) { if (a.shift === 'DAY' || a.shift === 'NIGHT') rosterShift[a.name] = a.shift; });
+      var list = {};
       if (res[1]) {
-        var byMonth = {}, list = {};
+        var byMonth = {};
         (res[1].rows || []).forEach(function (r) { var c = r.c || [], nm = matchName(cText(c[1]), known), mo = monthOfCell(c[0]), sh = estShift(cText(c[2])); if (!nm || !mo || !sh) return; byMonth[nm + '|' + mo] = sh; (list[nm] = list[nm] || []).push({ m: mo, sh: sh }); });
         Object.keys(list).forEach(function (k) { list[k].sort(function (a, b) { return a.m < b.m ? -1 : 1; }); });
         rows.forEach(function (r) { var mo = monthKey(r.key), hit = byMonth[r.name + '|' + mo]; if (hit) { r.shift = hit; return; } var l = list[r.name]; if (!l) return; var before = l.filter(function (x) { return x.m <= mo; }); r.shift = (before.length ? before[before.length - 1] : l[0]).sh; });
-        S.shiftReady = Object.keys(byMonth).length > 0;
-        var untagged = known.filter(function (n) { return !list[n]; });
-        if (untagged.length) notes.push('Not on the “' + CFG.SHIFT_TAB + '” tab, so they appear under All shifts only: ' + untagged.join(', ') + '.');
-      } else if (CFG.SHIFT_TAB) notes.push('Shifts couldn’t be read (' + shiftErr + '), so the shift filter is off.');
+      } else if (CFG.SHIFT_TAB && !Object.keys(rosterShift).length) notes.push('Shifts couldn’t be read (' + shiftErr + '), so the shift filter is off.');
+      // anyone not on the shift tab takes their shift from the Roster (their current schedule)
+      var fromRoster = [];
+      rows.forEach(function (r) { if (!r.shift && rosterShift[r.name]) { r.shift = rosterShift[r.name]; if (fromRoster.indexOf(r.name) < 0) fromRoster.push(r.name); } });
+      S.shiftReady = rows.some(function (r) { return r.shift; });
+      var untagged = known.filter(function (n) { return !list[n] && !rosterShift[n] && (!S.rosterOk || S.roster.some(function (x) { return x.name === n; })); });
+      if (S.shiftReady && untagged.length) notes.push('No shift found on the ' + [CFG.SHIFT_TAB, CFG.ROSTER_TAB].filter(Boolean).map(function (t) { return '“' + t + '”'; }).join(' or ') + ' tab, so they appear under All shifts only: ' + untagged.join(', ') + '.');
+      if (fromRoster.length && res[1]) notes.push('Not on the “' + CFG.SHIFT_TAB + '” tab, so their shift comes from their current schedule on the Roster: ' + fromRoster.join(', ') + '.');
+      var offRoster = S.rosterOk ? known.filter(function (n) { return !S.roster.some(function (a) { return a.name === n; }); }) : [];
+      if (offRoster.length) notes.push('In the call data but not on the “' + CFG.ROSTER_TAB + '” tab (former agents, or a different spelling): ' + offRoster.join(', ') + '.');
       rows.sort(function (a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : a.name.localeCompare(b.name); });
       S.rows = rows; S.agents = known.sort(); S.notes = notes; S.error = ''; S.loaded = true; S.syncedAt = new Date();
       S.minKey = rows.length ? rows[0].key : null; S.maxKey = rows.length ? rows[rows.length - 1].key : null;
@@ -1149,9 +1195,11 @@ table.t td .delta{white-space:nowrap}
     var a = base || {};
     CALL_SUM.forEach(function (f) { a[f] = S.has[f] || f === 'talk' ? 0 : null; });
     TIME_SUM.forEach(function (f) { a[f] = S.has[f === 'talkT' ? 'talk' : f] ? 0 : null; });
+    a.ahtW = 0; a.ahtCalls = 0;
     a.days = 0; a.shortDays = 0; a.partialDays = 0; a.short = 0; a.lessLogin = 0; a.overAway = 0; a.excludedDays = 0; a.list = list;
     list.forEach(function (r) {
       CALL_SUM.forEach(function (f) { if (a[f] != null) a[f] += r[f] || 0; });
+      var rc = (r.inbound || 0) + (r.outbound || 0); if (S.has.ahtSheet && r.ahtSheet > 0 && rc > 0) { a.ahtW += r.ahtSheet * rc; a.ahtCalls += rc; }
       var x = derive(r);
       if (x.excluded) a.excludedDays++;
       if (!x.counted) return;
@@ -1163,7 +1211,8 @@ table.t td .delta{white-space:nowrap}
   }
   function finish(a) {
     a.calls = (a.inbound || 0) + (a.outbound || 0);
-    a.aht = a.calls ? ((a.talk || 0) + (a.hold || 0)) / a.calls : null;
+    // AHT comes from the sheet's AHT column (per agent per day); across days it's weighted by calls
+    a.aht = S.has.ahtSheet ? (a.ahtCalls ? a.ahtW / a.ahtCalls : null) : a.calls ? ((a.talk || 0) + (a.hold || 0)) / a.calls : null;
     var meet = CFG.COUNT_MEETINGS_AS_WORK && a.meeting != null ? a.meeting : 0;
     a.notAvail = a.login != null && a.session != null ? a.login - a.session : null;
     a.meetSeg = a.meeting != null ? a.meeting : null;
@@ -1177,7 +1226,7 @@ table.t td .delta{white-space:nowrap}
   }
   // one agent-day as a row object for the tables
   function dayObj(r) {
-    var x = derive(r), o = finish(Object.assign({}, r, { talkT: r.talk, days: x.worked ? 1 : 0 }));
+    var x = derive(r), rc = (r.inbound || 0) + (r.outbound || 0), ok = r.ahtSheet > 0 && rc > 0, o = finish(Object.assign({}, r, { talkT: r.talk, days: x.worked ? 1 : 0, ahtW: ok ? r.ahtSheet * rc : 0, ahtCalls: ok ? rc : 0 }));
     o.date = r.key; o.d = x; o.flags = flagsOf(r); o.shortV = x.short; o.workV = x.work; return o;
   }
   function byAgent(rows) {
@@ -1276,7 +1325,8 @@ table.t td .delta{white-space:nowrap}
     occ: { k: 'occ', label: 'Occupancy', num: 1, val: function (r) { return r.occ; }, fmt: function (v) { return pct(v); }, tip: 'Occupancy\nTalk time ÷ session time.' },
     bar: { k: 'bar', label: 'Where the time went', val: function (r) { return r.login; }, html: function (r) { return stack(r); } }
   };
-  COL.aht.tip = 'Average handle time\n(Talk time + hold time) ÷ calls. Target ' + msf(CFG.AHT_TARGET_SEC) + '.';
+  function ahtTip() { return 'Average handle time\n' + (S.has.ahtSheet ? 'From column ' + (CFG.COLUMN_PINS.ahtSheet || 'AHT') + ' of the ' + CFG.REPORT_TAB + ' tab. Across several days it’s the call-weighted average of the daily values.' : '(Talk time + hold time) ÷ (inbound + outbound calls).') + ' Target ' + msf(CFG.AHT_TARGET_SEC) + '.'; }
+  Object.defineProperty(COL.aht, 'tip', { get: ahtTip });
   function workTip() { return 'Work time\nSession + wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' + meetings' : '') + '. Judged against ' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' a day (' + hms(CFG.ACCEPTABLE_TIME_SEC / 2) + ' on a partial day, when login is under ' + hms(CFG.PARTIAL_DAY_LOGIN_SEC) + '). A day counts as short only when it’s under by more than ' + msf(CFG.SHORT_GRACE_SEC) + ' min.'; }
   // day-level columns shared by the scorecard and the daily log
   function dayCols() {
@@ -1316,7 +1366,7 @@ table.t td .delta{white-space:nowrap}
     return '<div class="kpi-strip">' +
       kpi('Calls handled', int(a.calls), int(a.inbound) + ' in · ' + int(a.outbound) + ' out', '', 'Calls handled\nInbound calls + outbound calls.', 'agents', dl(a.calls, p && p.calls, 'n', 0)) +
       kpi('Answer rate', pct(a.answer), a.offered != null ? int(a.offered) + ' offered · ' + int(Math.max(0, a.unanswered)) + ' not answered' : 'Offered calls column missing', a.answer != null && a.answer < CFG.ANSWER_RATE_TARGET ? 'caution' : '', 'Answer rate\nInbound calls ÷ offered calls. Target ' + pct(CFG.ANSWER_RATE_TARGET, 0) + '.', '', dl(a.answer, p && p.answer, 'pts', 1)) +
-      kpi('Avg handle time', msf(a.aht), 'Target ' + msf(CFG.AHT_TARGET_SEC), ahtTone(a.aht) === 'bad' ? 'alert' : ahtTone(a.aht) === 'warn' ? 'caution' : '', 'Average handle time\n(Talk time + hold time) ÷ (inbound + outbound calls).', '', dl(a.aht, p && p.aht, 'ms', -1)) +
+      kpi('Avg handle time', msf(a.aht), 'Target ' + msf(CFG.AHT_TARGET_SEC), ahtTone(a.aht) === 'bad' ? 'alert' : ahtTone(a.aht) === 'warn' ? 'caution' : '', ahtTip(), '', dl(a.aht, p && p.aht, 'ms', -1)) +
       kpi('Utilization', pct(a.util), 'Talk ÷ login time', '', 'Utilization\nShare of logged-in time spent talking.', 'time', dl(a.util, p && p.util, 'pts', 1)) +
       kpi('Occupancy', pct(a.occ), 'Talk ÷ session time', '', 'Occupancy\nShare of available time spent talking.', 'time', dl(a.occ, p && p.occ, 'pts', 1)) +
       kpi('Work time per day', hms(a.per('work')), a.days ? 'Short on ' + a.shortDays + ' of ' + plural(a.days, perAgentDay ? 'agent-day' : 'day') : 'No days worked', a.days && a.shortDays / a.days >= 0.5 ? 'caution' : '', workTip(), 'time', dl(a.per('work'), p && p.per('work'), 't', 1)) +
@@ -1408,10 +1458,11 @@ table.t td .delta{white-space:nowrap}
 
   function agentPage(name) {
     var all = S.rows.filter(function (r) { return r.name === name; }), rows = all.filter(inScope), a = agg(rows, { name: name });
-    var shifts = Array.from(new Set(rows.map(function (r) { return r.shift; }).filter(Boolean))).map(function (s) { return SHIFT_LABEL[s]; });
+    var shifts = Array.from(new Set(rows.map(function (r) { return r.shift; }).filter(Boolean))).map(function (s) { return SHIFT_LABEL[s]; }), ro = rosterFor(name);
     var head = '<button class="btn btn-ghost btn-sm back" data-act="backAgents">' + icon('chev') + 'All agents</button>' +
-      '<div class="agent-head">' + av(name) + '<div><h2>' + esc(name) + '</h2><p>' + esc(scopeLabel()) + (shifts.length ? ' · ' + esc(shifts.join(' and ')) + ' shift' : '') + '</p></div>' +
-      '<div class="actions"><label class="sr-only" for="pick-agent">Agent</label><select id="pick-agent" class="input input-sm" data-change="pickAgent">' + S.agents.map(function (n) { return '<option' + (n === name ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></div></div>';
+      '<div class="agent-head">' + av(name) + '<div><h2>' + esc(name) + (ro && isNewHire(ro) ? ' <span class="b info">New hire</span>' : '') + '</h2><p>' + esc(scopeLabel()) + (shifts.length ? ' · ' + esc(shifts.join(' and ')) + ' shift' : '') + '</p>' + (ro ? '<p>' + (ro.hire ? 'Hired ' + esc(fmtDay(ro.hire, true)) + ' · ' + esc(tenure(ro.hire)) : 'No hire date on the Roster') + '</p>' : '') + '</div>' +
+      '<div class="actions"><label class="sr-only" for="pick-agent">Agent</label><select id="pick-agent" class="input input-sm" data-change="pickAgent">' + pickList(name).map(function (n) { return '<option' + (n === name ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></div></div>' +
+      (ro ? '<section class="card"><div class="card-h"><h2>Weekly schedule</h2><span class="small muted">From the Roster · Eastern time · ' + ro.on + ' days on</span></div>' + weekStrip(ro) + '</section>' : '');
     if (!rows.length) return head + '<div class="card">' + emptyState('No days for ' + name + ' in ' + scopeLabel(), 'Pick another period at the top, or see all time. The month-by-month table below covers all time.') + '<div style="text-align:center;margin:-12px 0 18px"><button class="btn" data-act="allTime">Show all time</button></div></div>' + monthTable(all);
     var dayRows = rows.map(dayObj);
     var cols = [{ k: 'date', label: 'Date', val: function (r) { return r.date; }, fmt: function (v) { return fmtDow(v); } },
@@ -1423,6 +1474,7 @@ table.t td .delta{white-space:nowrap}
       (a.shortDays ? '<p class="small" style="margin:12px 0 0">Short on <b>' + a.shortDays + ' of ' + a.days + '</b> days, by ' + hms(a.short / a.shortDays) + ' on average' + (why ? ': ' + esc(why) + ' on an average short day' : '') + '.</p>' : '') + '</section>' +
       '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>Day by day</h2><span class="small muted">' + esc(scopeLabel()) + '</span></div>' + table('day', cols, dayRows, { foot: a }) + '</section>' + monthTable(all);
   }
+  function pickList(name) { var l = S.agents.concat(S.roster.map(function (a) { return a.name; })); if (l.indexOf(name) < 0) l.push(name); return Array.from(new Set(l)).sort(); }
   function monthTable(all) {
     var m = {}; all.forEach(function (r) { (m[monthKey(r.key)] = m[monthKey(r.key)] || []).push(r); });
     var list = Object.keys(m).map(function (k) { var a = agg(m[k]); a.month = k; return a; });
@@ -1528,11 +1580,89 @@ table.t td .delta{white-space:nowrap}
       '<section class="card"><div class="card-h"><h2>Calls and rates</h2></div>' +
       d('util', 'Utilization', '<p>Share of logged-in time spent talking. It matches the report’s Utilization (%) column.</p>', 'Utilization = Talk time ÷ Login time × 100') +
       d('occ', 'Occupancy', '<p>Share of available time spent talking. It matches the report’s Occupancy (%) column.</p>', 'Occupancy = Talk time ÷ Session time × 100') +
-      d('aht', 'Average handle time', '<p>The report’s own Handle time equals Talk time. This hub uses the team’s definition, which adds hold time.</p>', 'AHT = (Talk time + Hold time) ÷ (Inbound calls + Outbound calls)') +
+      (S.has.ahtSheet ? d('aht', 'Average handle time', '<p>Read from column ' + esc(CFG.COLUMN_PINS.ahtSheet || 'AHT') + ' of the ' + esc(CFG.REPORT_TAB) + ' tab, one value per agent per day. For a week, a month or the team, the daily values are averaged by calls, so a busy day counts more than a quiet one, the same as dividing total handle time by total calls.</p>', 'AHT for a period = Σ (daily AHT × daily calls) ÷ Σ daily calls') : d('aht', 'Average handle time', '<p>The sheet has no AHT column, so it’s calculated with the team’s definition.</p>', 'AHT = (Talk time + Hold time) ÷ (Inbound calls + Outbound calls)')) +
       d('offered', 'Offered calls', '<p>Inbound calls the system routed to the agent, whether or not they picked up. There’s no exact formula: answered calls plus missed dials explain most of it, and the rest are usually calls picked up by another agent or abandoned before they counted as missed.</p>', 'Offered calls ≈ Inbound calls + Missed dials + other unanswered offers') +
       d('answer', 'Answer rate', '<p>Share of offered calls the agent answered. Target ' + pct(CFG.ANSWER_RATE_TARGET, 0) + '.</p>', 'Answer rate = Inbound calls ÷ Offered calls × 100') +
       d('compare', 'Comparisons', '<p>Changes are measured against the period just before. A month is compared with the month before; a month in progress with the same days of the month before; any other range with the same number of days right before it. All time has no comparison.</p>', '') +
       '</section><p class="small muted">Targets are set in the configuration block at the top of this file: AHT ' + msf(CFG.AHT_TARGET_SEC) + ', answer rate ' + pct(CFG.ANSWER_RATE_TARGET, 0) + ', ' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' of work time a day, ' + hms(CFG.BREAK_ALLOWANCE_SEC) + ' break allowance, ' + msf(CFG.SHORT_GRACE_SEC) + ' min grace, partial day under ' + hms(CFG.PARTIAL_DAY_LOGIN_SEC) + ' of login.</p>';
+  };
+
+  // ---------------- roster ----------------
+  var DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  function parseSched(raw) {
+    var s = String(raw || '').trim(), l = s.toLowerCase().replace(/\s+/g, '');
+    if (!l) return { kind: 'none', label: '—', raw: s };
+    if (/rest|off|leave|^rd$/.test(l)) return { kind: 'rest', label: 'Rest day', raw: s };
+    var m = l.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)(?:-|–|—|to)(\d{1,2})(?::(\d{2}))?(am|pm)/);
+    if (m) {
+      var h = (+m[1] % 12) + (m[3] === 'pm' ? 12 : 0), lab = function (hh, mm, ap) { return +hh + (mm && mm !== '00' ? ':' + mm : '') + ap.toUpperCase(); };
+      return { kind: h >= 6 && h < 18 ? 'day' : 'night', label: lab(m[1], m[2], m[3]) + '–' + lab(m[4], m[5], m[6]), raw: s };
+    }
+    return { kind: 'other', label: s, raw: s };
+  }
+  function parseRoster(t, known) {
+    var out = [];
+    (t.rows || []).forEach(function (r) {
+      var c = r.c || [], raw = cText(c[0]); if (!raw) return;
+      var name = matchName(raw, known), hc = c[1], hd = hc ? gDate(typeof hc.v === 'string' ? hc.v : hc.f) || gDate(hc.f) : null;
+      var days = [2, 3, 4, 5, 6, 7, 8].map(function (i) { return parseSched(cText(c[i])); });
+      var cnt = { day: 0, night: 0 }; days.forEach(function (d) { if (cnt[d.kind] != null) cnt[d.kind]++; });
+      var labels = Array.from(new Set(days.filter(function (d) { return d.kind === 'day' || d.kind === 'night'; }).map(function (d) { return d.label; })));
+      out.push({ name: name, hire: hd ? dayKey(hd) : null, days: days, on: cnt.day + cnt.night, rest: days.filter(function (d) { return d.kind === 'rest'; }).length,
+        shift: cnt.day && !cnt.night ? 'DAY' : cnt.night && !cnt.day ? 'NIGHT' : cnt.day || cnt.night ? (cnt.day >= cnt.night ? 'DAY' : 'NIGHT') : '', mixed: !!(cnt.day && cnt.night), labels: labels });
+    });
+    return out;
+  }
+  function todayIdx() { // 0 = Monday, in the schedule's time zone
+    var w; try { w = new Intl.DateTimeFormat('en-US', { timeZone: CFG.SCHEDULE_TIMEZONE || undefined, weekday: 'short' }).format(new Date()); } catch (e) { w = new Date().toLocaleDateString('en-US', { weekday: 'short' }); }
+    return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(w);
+  }
+  function todayKey() { try { var p = new Intl.DateTimeFormat('en-CA', { timeZone: CFG.SCHEDULE_TIMEZONE || undefined, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); if (/^\d{4}-\d{2}-\d{2}$/.test(p)) return p; } catch (e) { } return dayKey(new Date()); }
+  function tenureDays(hire) { return hire ? Math.round((keyDate(todayKey()) - keyDate(hire)) / 86400000) : null; }
+  function tenure(hire) {
+    var n = tenureDays(hire); if (n == null) return '—';
+    if (n < 0) return 'Starts ' + fmtDay(hire);
+    if (n < 31) return plural(n, 'day');
+    var a = keyDate(hire), b = keyDate(todayKey()), mo = (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() - (b.getDate() < a.getDate() ? 1 : 0), y = Math.floor(mo / 12); mo = mo % 12;
+    return (y ? y + ' yr' + (y > 1 ? 's' : '') : '') + (y && mo ? ' ' : '') + (mo ? mo + ' mo' : '');
+  }
+  function isNewHire(a) { var n = tenureDays(a.hire); return n != null && n >= 0 && n < CFG.NEW_HIRE_DAYS; }
+  function schChip(d) { return d.kind === 'none' ? '<span class="muted">—</span>' : '<span class="sch ' + d.kind + '" title="' + esc(d.raw) + '">' + esc(d.label) + '</span>'; }
+  function shiftText(a) { return a.shift ? (a.mixed ? 'Mixed' : a.shift === 'DAY' ? 'Day' : 'Night') : '—'; }
+  function rosterFor(name) { return S.roster.filter(function (a) { return a.name === name; })[0] || null; }
+  function weekStrip(a) {
+    var t = todayIdx();
+    return '<div class="week" role="list" aria-label="Weekly schedule">' + a.days.map(function (d, i) { return '<div role="listitem" class="wk' + (i === t ? ' today' : '') + '"><small>' + DOW[i].slice(0, 3) + (i === t ? ' · today' : '') + '</small>' + schChip(d) + '</div>'; }).join('') + '</div>';
+  }
+
+  PAGES.roster = function () {
+    var w = needData(); if (w) return w;
+    if (!S.rosterOk) return notesHTML() + '<div class="card">' + emptyState('The Roster couldn’t be read', 'Check that the sheet has a “' + CFG.ROSTER_TAB + '” tab with Agent, Hire Date and Monday–Sunday in columns A–I.') + '</div>';
+    if (!S.roster.length) return notesHTML() + '<div class="card">' + emptyState('The Roster is empty', 'Add agents to the “' + CFG.ROSTER_TAB + '” tab: Agent, Hire Date and Monday–Sunday.') + '</div>';
+    var t = todayIdx(), R = S.roster, today = R.map(function (a) { return a.days[t] || { kind: 'none' }; });
+    var onDay = today.filter(function (d) { return d.kind === 'day'; }).length, onNight = today.filter(function (d) { return d.kind === 'night'; }).length, resting = today.filter(function (d) { return d.kind === 'rest'; }).length;
+    var newHires = R.filter(isNewHire), noHire = R.filter(function (a) { return !a.hire; }).length;
+    var avgTen = R.filter(function (a) { return tenureDays(a.hire) >= 0; }), avgDays = avgTen.length ? avgTen.reduce(function (x, a) { return x + tenureDays(a.hire); }, 0) / avgTen.length : null;
+    var strip = '<div class="kpi-strip" style="grid-template-columns:repeat(4,minmax(0,1fr))">' +
+      kpi('On the roster', String(R.length), plural(R.filter(function (a) { return a.shift === 'DAY'; }).length, 'day-shift agent') + ' · ' + R.filter(function (a) { return a.shift === 'NIGHT'; }).length + ' night', '', '') +
+      kpi('Scheduled today', String(onDay + onNight), DOW[t] + ': ' + onDay + ' day · ' + onNight + ' night', '', 'Scheduled today\nFrom the Roster for ' + DOW[t] + ' in Eastern time.') +
+      kpi('Rest day today', String(resting), resting ? R.filter(function (a, i) { return today[i].kind === 'rest'; }).map(function (a) { return a.name.split(' ')[0]; }).join(', ') : 'Everyone is scheduled', '', '') +
+      kpi('New hires', String(newHires.length), 'Hired in the last ' + CFG.NEW_HIRE_DAYS + ' days · average tenure ' + (avgDays == null ? '—' : (avgDays >= 365 ? (avgDays / 365).toFixed(1) + ' yrs' : Math.round(avgDays / 30.4) + ' mo')), newHires.length ? 'caution' : '', 'New hires\nHire date within the last ' + CFG.NEW_HIRE_DAYS + ' days. Set NEW_HIRE_DAYS in the configuration block.') + '</div>';
+    var cols = [COL.name,
+      { k: 'hire', label: 'Hire date', val: function (a) { return a.hire; }, fmt: function (v) { return v ? fmtDay(v, true) : '—'; } },
+      { k: 'tenure', label: 'Tenure', val: function (a) { return tenureDays(a.hire); }, html: function (a) { return esc(tenure(a.hire)) + (isNewHire(a) ? '<div><span class="b info">New hire</span></div>' : ''); } },
+      { k: 'shift', label: 'Shift', val: function (a) { return shiftText(a); }, html: function (a) { return esc(shiftText(a)) + (a.labels.length ? '<div class="small muted">' + esc(a.labels.join(', ')) + '</div>' : ''); } }
+    ].concat(DOW.map(function (dname, i) { return { k: 'd' + i, label: dname.slice(0, 3) + (i === t ? ' · today' : ''), val: function (a) { return a.days[i].kind === 'rest' ? 'z' + a.days[i].label : a.days[i].label; }, html: function (a) { return schChip(a.days[i]); }, cls: function () { return i === t ? 'today-col' : ''; } }; }))
+      .concat([{ k: 'on', label: 'Days on', num: 1, val: function (a) { return a.on; }, fmt: function (v, a) { return v + ' / 7'; }, cls: function (a) { return a.on !== 5 ? 'warn' : ''; }, tip: 'Days on\nScheduled days in the week. Highlighted when it isn’t 5.' }]);
+    // coverage: who is on each day
+    var cov = '<tr class="cov"><td>Coverage</td><td></td><td></td><td></td>' + DOW.map(function (d, i) {
+      var dd = R.filter(function (a) { return a.days[i].kind === 'day'; }).length, nn = R.filter(function (a) { return a.days[i].kind === 'night'; }).length;
+      return '<td class="' + (i === t ? 'today-col' : '') + '"><span class="small"><b>' + dd + '</b> day<br><b>' + nn + '</b> night</span></td>';
+    }).join('') + '<td></td></tr>';
+    var tbl = table('rost', cols, R, { click: 'openAgent' }).replace('</tbody>', '</tbody><tfoot>' + cov + '</tfoot>');
+    return notesHTML() + strip +
+      '<section class="card card-flush rost-wrap"><div class="card-h" style="padding:14px 16px 0"><h2>Roster and weekly schedule</h2><span class="small muted">From the “' + esc(CFG.ROSTER_TAB) + '” tab · times in Eastern time · click an agent for their scorecard</span></div>' + tbl + '</section>' +
+      '<div class="legend2"><span><i class="sch-dot day"></i>Day shift (starts 6AM–5:59PM)</span><span><i class="sch-dot night"></i>Night shift</span><span><i class="sch-dot rest"></i>Rest day</span>' + (noHire ? '<span class="muted">' + plural(noHire, 'agent') + ' without a hire date</span>' : '') + '</div>';
   };
 
   // ---------------- shell ----------------
