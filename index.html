@@ -969,7 +969,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
     rows: [], agents: [], loaded: false, loading: false, error: '', notes: [], syncedAt: null, has: {}, shiftReady: false,
     page: 'overview', period: lsGet('ags_cr_period', 'thismonth'), from: null, to: null, shift: lsGet('ags_cr_shift', 'all'),
     agent: null, timeView: 'avg', excludeFlagged: lsGet('ags_cr_exclude', true), checkCode: 'all', logAgent: 'all', logShort: false, logPage: 0, navCollapsed: lsGet('ags_nav_collapsed', false),
-    sort: { lb: { k: 'calls', d: -1 }, roster: { k: 'calls', d: -1 }, time: { k: 'short', d: -1 }, day: { k: 'date', d: -1 }, log: { k: 'date', d: -1 }, month: { k: 'month', d: -1 }, checks: { k: 'date', d: -1 }, rost: { k: 'name', d: 1 } },
+    sort: { lb: { k: 'calls', d: -1 }, roster: { k: 'calls', d: -1 }, time: { k: 'login', d: -1 }, day: { k: 'date', d: -1 }, log: { k: 'date', d: -1 }, month: { k: 'month', d: -1 }, checks: { k: 'date', d: -1 }, rost: { k: 'name', d: 1 } },
     roster: [], rosterOk: false, rosterErr: '',
     minKey: null, maxKey: null
   };
@@ -1327,13 +1327,11 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
   };
   function ahtTip() { return 'Average handle time\n' + (S.has.ahtSheet ? 'From column ' + (CFG.COLUMN_PINS.ahtSheet || 'AHT') + ' of the ' + CFG.REPORT_TAB + ' tab. Across several days it’s the call-weighted average of the daily values.' : '(Talk time + hold time) ÷ (inbound + outbound calls).') + ' Target ' + msf(CFG.AHT_TARGET_SEC) + '.'; }
   Object.defineProperty(COL.aht, 'tip', { get: ahtTip });
-  function workTip() { return 'Work time\nSession + wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' + meetings' : '') + '. Judged against ' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' a day (' + hms(CFG.ACCEPTABLE_TIME_SEC / 2) + ' on a partial day, when login is under ' + hms(CFG.PARTIAL_DAY_LOGIN_SEC) + '). A day counts as short only when it’s under by more than ' + msf(CFG.SHORT_GRACE_SEC) + ' min.'; }
+  function workTip() { return 'Work time\nSession + wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' + meetings' : '') + '.'; }
   // day-level columns shared by the scorecard and the daily log
   function dayCols() {
     return [
-      { k: 'work', label: 'Work time', num: 1, val: function (r) { return r.d ? r.workV : r.work; }, fmt: function (v, r) { return hms(v) + (r.d && r.d.partial ? ' · partial' : ''); }, cls: function (r) { return r.shortV > 0 ? 'bad' : ''; }, tip: workTip() },
-      { k: 'short', label: 'Short by', num: 1, val: function (r) { return r.d ? r.shortV : r.short; }, fmt: function (v) { return v > 0 ? hms(v) : '—'; }, cls: function (r) { return r.shortV > 0 ? 'bad' : ''; } },
-      { k: 'why', label: 'Why short', val: function (r) { return r.d.short ? r.d.lessLogin - r.d.overAway : null; }, noFoot: 1, html: function (r) { return r.d.excluded ? '<span class="small muted">Not judged: data problem</span>' : r.d.short ? '<span class="small" style="display:block;min-width:200px">' + esc(whyShort(r.d.lessLogin, r.d.overAway) || 'just under target') + '</span>' : ''; }, tip: 'Why short\nLogged in less: login was under ' + hms(CFG.ACCEPTABLE_TIME_SEC + CFG.BREAK_ALLOWANCE_SEC) + ' (the target plus the ' + hms(CFG.BREAK_ALLOWANCE_SEC) + ' break allowance).\nOver the break allowance: time off work (breaks, lunch, away) was more than ' + hms(CFG.BREAK_ALLOWANCE_SEC) + '.' },
+      { k: 'work', label: 'Work time', num: 1, val: function (r) { return r.d ? r.workV : r.work; }, fmt: function (v, r) { return hms(v); }, tip: workTip() },
       { k: 'flags', label: 'Checks', val: function (r) { return r.flags.length; }, noFoot: 1, html: function (r) { return r.flags.length ? '<span class="b ' + (r.flags.some(function (f) { return f.sev === 'High'; }) ? 'bad' : 'warn') + '" data-tip="' + esc('Data check\n' + r.flags.map(function (f) { return f.text; }).join('\n')) + '" tabindex="0">' + r.flags.length + '</span>' : ''; } }
     ];
   }
@@ -1343,7 +1341,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
   function notesHTML() {
     var out = '';
     if (S.error) out += '<div class="note bad" role="alert" style="margin-bottom:14px">' + esc(S.error) + ' <button class="btn btn-sm" data-act="sync">Try again</button></div>';
-    if (S.notes.length) out += '<details class="attn"><summary><b>' + plural(S.notes.length, 'thing') + ' in the sheet to check</b></summary><ul>' + S.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></details>';
+    if (false && S.notes.length) out += '<details class="attn"><summary><b>' + plural(S.notes.length, 'thing') + ' in the sheet to check</b></summary><ul>' + S.notes.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + '</ul></details>';
     return out;
   }
   function checksNote(rows) {
@@ -1369,7 +1367,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
       kpi('Avg handle time', msf(a.aht), 'Target ' + msf(CFG.AHT_TARGET_SEC), ahtTone(a.aht) === 'bad' ? 'alert' : ahtTone(a.aht) === 'warn' ? 'caution' : '', ahtTip(), '', dl(a.aht, p && p.aht, 'ms', -1)) +
       kpi('Utilization', pct(a.util), 'Talk ÷ login time', '', 'Utilization\nShare of logged-in time spent talking.', 'time', dl(a.util, p && p.util, 'pts', 1)) +
       kpi('Occupancy', pct(a.occ), 'Talk ÷ session time', '', 'Occupancy\nShare of available time spent talking.', 'time', dl(a.occ, p && p.occ, 'pts', 1)) +
-      kpi('Work time per day', hms(a.per('work')), a.days ? 'Short on ' + a.shortDays + ' of ' + plural(a.days, perAgentDay ? 'agent-day' : 'day') : 'No days worked', a.days && a.shortDays / a.days >= 0.5 ? 'caution' : '', workTip(), 'time', dl(a.per('work'), p && p.per('work'), 't', 1)) +
+      kpi('Work time per day', hms(a.per('work')), a.days ? 'Session + wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' + meetings' : '') + ' · ' + plural(a.days, perAgentDay ? 'agent-day' : 'day') : 'No days worked', '', workTip(), 'time', dl(a.per('work'), p && p.per('work'), 't', 1)) +
       '</div>';
   }
   function teamSplit(a) {
@@ -1405,10 +1403,6 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
     var items = [], rank = { High: 0, Medium: 1, Low: 2 };
     agents.forEach(function (a) {
       var issues = [];
-      if (a.days >= 2 && a.shortDays / a.days >= 0.5) {
-        var why = whyShort(a.lessLogin / a.shortDays, a.overAway / a.shortDays);
-        issues.push({ sev: a.shortDays / a.days >= 0.75 ? 'High' : 'Medium', m: 'Short on <b>' + a.shortDays + ' of ' + a.days + '</b> days, by ' + hms(a.short / a.shortDays) + ' on average' + (why ? ' (' + esc(why) + ')' : '') });
-      }
       var t = ahtTone(a.aht); if (t === 'bad' || t === 'warn') issues.push({ sev: t === 'bad' ? 'High' : 'Medium', m: 'AHT <b>' + msf(a.aht) + '</b> against ' + msf(CFG.AHT_TARGET_SEC) });
       if (a.answer != null && a.offered >= 20 && a.answer < CFG.ANSWER_RATE_TARGET) issues.push({ sev: a.answer < CFG.ANSWER_RATE_TARGET - 0.1 ? 'High' : 'Low', m: 'Answered <b>' + pct(a.answer) + '</b> of offered calls' });
       if (!issues.length) return;
@@ -1425,17 +1419,17 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
     var w = needData(); if (w) return w;
     var rows = scopeRows(), team = agg(rows), agents = byAgent(rows);
     if (!rows.length) return notesHTML() + '<div class="card">' + emptyState('No calls for ' + scopeLabel(), 'Pick another period or shift at the top.') + '</div>';
-    var maxDay = Math.max.apply(null, agents.map(function (a) { return a.per('login') || 0; }).concat([CFG.ACCEPTABLE_TIME_SEC]));
+    var maxDay = Math.max.apply(null, agents.map(function (a) { return a.per('login') || 0; }).concat([1]));
     var perAgent = agents.filter(function (a) { return a.days; }).sort(function (a, b) { return (b.per('login') || 0) - (a.per('login') || 0); }).map(function (a) {
       var avg = avgDay(a);
       return '<button class="trow" data-act="openAgent" data-name="' + esc(a.name) + '">' + who(a.name).replace('<span>', '<b>').replace(/<\/span><\/span>$/, '</b></span>') +
-        '<span class="track">' + stack(avg, { scale: maxDay, title: a.name + ': average day, logged in ' + hms(avg.login) }) + '<i class="target" style="left:' + (CFG.ACCEPTABLE_TIME_SEC / maxDay * 100).toFixed(2) + '%" aria-hidden="true"></i></span><span class="tv">' + hms(avg.login) + '</span></button>';
+        '<span class="track">' + stack(avg, { scale: maxDay, title: a.name + ': average day, logged in ' + hms(avg.login) }) + '</span><span class="tv">' + hms(avg.login) + '</span></button>';
     }).join('');
     var lbCols = [COL.name, COL.calls, COL.inbound, COL.outbound, COL.answer, COL.aht, COL.talk, COL.login, COL.util, COL.occ];
     return notesHTML() + checksNote(rows) + kpiStrip(team, true, prevRows()) +
-      '<div class="g-main"><section class="card"><div class="card-h"><h2>Where logged-in time went ' + infoTip('Average day per agent\nEach bar is one agent’s average logged-in day. Talk, online, wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' and meetings' : '') + ' are the work time counted against ' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' (the dashed line). When the work part ends before the line, the average day is short.') + '</h2><span class="small muted">' + esc(scopeLabel()) + '</span></div>' +
+      '<div class="g-main"><section class="card"><div class="card-h"><h2>Where logged-in time went ' + infoTip('Average day per agent\nEach bar is one agent’s average logged-in day. Talk, online, wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' and meetings' : '') + ' are work time; the grey part is other statuses such as breaks, lunch and away.') + '</h2><span class="small muted">' + esc(scopeLabel()) + '</span></div>' +
       (S.has.login ? legend() + '<div>' + perAgent + '</div>' + teamSplit(team) : emptyState('Login time isn’t in the sheet', 'Add the Login time, Session time, Online and Wrap-up total columns to see this.')) + '</section>' +
-      '<section class="card"><div class="card-h"><h2>Needs a look</h2><span class="small muted">Targets: ' + msf(CFG.AHT_TARGET_SEC) + ' AHT · ' + pct(CFG.ANSWER_RATE_TARGET, 0) + ' answered · ' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' work a day</span></div>' + attention(agents) + '</section></div>' +
+      '<section class="card"><div class="card-h"><h2>Needs a look</h2><span class="small muted">Targets: ' + msf(CFG.AHT_TARGET_SEC) + ' AHT · ' + pct(CFG.ANSWER_RATE_TARGET, 0) + ' answered</span></div>' + attention(agents) + '</section></div>' +
       '<section class="card"><div class="card-h"><h2>Calls over time</h2><span class="small muted">' + esc(scopeLabel()) + '</span></div>' + callsChart(rows) + '</section>' +
       '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>Leaderboard</h2><span class="small muted">Click an agent for their scorecard</span></div>' + table('lb', lbCols, agents, { click: 'openAgent', foot: team }) + '</section>';
   };
@@ -1451,8 +1445,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
       { k: 'ahtChg', label: 'AHT change', num: 1, val: function (r) { var p = pAgents[r.name]; return p && r.aht != null && p.aht != null ? r.aht - p.aht : null; }, html: chg(function (r) { return r.aht; }, 'ms', -1), noFoot: 1, tip: 'AHT change\nCompared with ' + (prev ? prev.label : 'the previous period') + '.' },
       COL.login, { k: 'work', label: 'Work per day', num: 1, val: function (r) { return r.per('work'); }, fmt: hms, tip: workTip() },
       { k: 'workChg', label: 'Work change', num: 1, val: function (r) { var p = pAgents[r.name]; return p && r.per('work') != null && p.per('work') != null ? r.per('work') - p.per('work') : null; }, html: chg(function (r) { return r.per('work'); }, 't', 1), noFoot: 1, tip: 'Work time per day, change\nCompared with ' + (prev ? prev.label : 'the previous period') + '.' },
-      COL.util, COL.occ,
-      { k: 'shortDays', label: 'Days short', num: 1, val: function (r) { return r.shortDays; }, fmt: function (v, r) { return r.days ? v + ' of ' + r.days : '—'; }, cls: function (r) { return r.shortDays ? 'warn' : ''; }, tip: workTip() }];
+      COL.util, COL.occ];
     return notesHTML() + checksNote(rows) + '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>' + plural(agents.length, 'agent') + '</h2><span class="small muted">' + esc(scopeLabel()) + (prev ? ' · changes vs ' + esc(prev.label) : '') + ' · click an agent for their scorecard</span></div>' + table('roster', cols, agents, { click: 'openAgent', foot: agg(rows) }) + '</section>';
   };
 
@@ -1462,16 +1455,15 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
     var head = '<button class="btn btn-ghost btn-sm back" data-act="backAgents">' + icon('chev') + 'All agents</button>' +
       '<div class="agent-head">' + av(name) + '<div><h2>' + esc(name) + (ro && isNewHire(ro) ? ' <span class="b info">New hire</span>' : '') + '</h2><p>' + esc(scopeLabel()) + (shifts.length ? ' · ' + esc(shifts.join(' and ')) + ' shift' : '') + '</p>' + (ro ? '<p>' + (ro.hire ? 'Hired ' + esc(fmtDay(ro.hire, true)) + ' · ' + esc(tenure(ro.hire)) : 'No hire date on the Roster') + '</p>' : '') + '</div>' +
       '<div class="actions"><label class="sr-only" for="pick-agent">Agent</label><select id="pick-agent" class="input input-sm" data-change="pickAgent">' + pickList(name).map(function (n) { return '<option' + (n === name ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></div></div>' +
-      (ro ? '<section class="card"><div class="card-h"><h2>Weekly schedule</h2><span class="small muted">From the Roster · Eastern time · ' + ro.on + ' days on</span></div>' + weekStrip(ro) + '</section>' : '');
+      (ro ? '<section class="card"><div class="card-h"><h2>Weekly schedule</h2><span class="small muted">From the Roster · Eastern time</span></div>' + weekStrip(ro) + '</section>' : '');
     if (!rows.length) return head + '<div class="card">' + emptyState('No days for ' + name + ' in ' + scopeLabel(), 'Pick another period at the top, or see all time. The month-by-month table below covers all time.') + '<div style="text-align:center;margin:-12px 0 18px"><button class="btn" data-act="allTime">Show all time</button></div></div>' + monthTable(all);
     var dayRows = rows.map(dayObj);
     var cols = [{ k: 'date', label: 'Date', val: function (r) { return r.date; }, fmt: function (v) { return fmtDow(v); } },
       COL.login, COL.session, COL.online, COL.talkT, COL.wrap].concat(S.has.meeting ? [COL.meeting] : []).concat([COL.other]).concat(dayCols()).concat([COL.calls, COL.answer, COL.aht, COL.bar]);
-    var why = a.shortDays ? whyShort(a.lessLogin / a.shortDays, a.overAway / a.shortDays) : '';
     return head + kpiStrip(a, false, prevRows(function (r) { return r.name === name; })) +
-      '<section class="card"><div class="card-h"><h2>Average day</h2><span class="small muted">' + plural(a.days, 'day') + ' judged' + (a.excludedDays ? ' · ' + a.excludedDays + ' left out for data problems' : '') + (a.partialDays ? ' · ' + a.partialDays + ' partial' : '') + '</span></div>' + legend() +
+      '<section class="card"><div class="card-h"><h2>Average day</h2><span class="small muted">' + plural(a.days, 'day') + ' worked' + (a.excludedDays ? ' · ' + a.excludedDays + ' left out for data problems' : '') + '</span></div>' + legend() +
       stack(avgDay(a), { big: true, title: 'Average day: logged in ' + hms(a.per('login')) }) + teamSplit(a) +
-      (a.shortDays ? '<p class="small" style="margin:12px 0 0">Short on <b>' + a.shortDays + ' of ' + a.days + '</b> days, by ' + hms(a.short / a.shortDays) + ' on average' + (why ? ': ' + esc(why) + ' on an average short day' : '') + '.</p>' : '') + '</section>' +
+      '</section>' +
       '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>Day by day</h2><span class="small muted">' + esc(scopeLabel()) + '</span></div>' + table('day', cols, dayRows, { foot: a }) + '</section>' + monthTable(all);
   }
   function pickList(name) { var l = S.agents.concat(S.roster.map(function (a) { return a.name; })); if (l.indexOf(name) < 0) l.push(name); return Array.from(new Set(l)).sort(); }
@@ -1481,7 +1473,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
     if (!list.length) return '';
     var cols = [{ k: 'month', label: 'Month', val: function (r) { return r.month; }, fmt: monthLabel }, { k: 'days', label: 'Days', num: 1, val: function (r) { return r.days; }, fmt: int }, COL.calls, COL.answer, COL.aht,
       { k: 'avgLogin', label: 'Login per day', num: 1, val: function (r) { return r.per('login'); }, fmt: hms }, { k: 'avgWork', label: 'Work per day', num: 1, val: function (r) { return r.per('work'); }, fmt: hms, tip: workTip() },
-      { k: 'shortDays', label: 'Days short', num: 1, val: function (r) { return r.shortDays; }, fmt: int, cls: function (r) { return r.shortDays ? 'warn' : ''; } }, COL.util, COL.occ];
+      COL.util, COL.occ];
     return '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>Month by month</h2><span class="small muted">All time, every shift</span></div>' + table('month', cols, list) + '</section>';
   }
 
@@ -1491,23 +1483,21 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
     if (!S.has.login) return notesHTML() + '<div class="card">' + emptyState('Login time isn’t in the sheet', 'This page needs the Login time, Session time, Online and Wrap-up total columns.') + '</div>';
     if (!agents.length) return notesHTML() + '<div class="card">' + emptyState('No days worked in ' + scopeLabel(), 'Pick another period or shift at the top.') + '</div>';
     var v = function (f) { return function (r) { return avg ? r.per(f) : r[f]; }; };
-    var cols = [COL.name, { k: 'days', label: 'Days', num: 1, val: function (r) { return r.days; }, fmt: function (x, r) { return int(x) + (r.partialDays ? ' (' + r.partialDays + ' partial)' : ''); } },
+    var cols = [COL.name, { k: 'days', label: 'Days', num: 1, val: function (r) { return r.days; }, fmt: int },
       { k: 'login', label: 'Login', num: 1, val: v('login'), fmt: hms, tip: COL.login.tip }, { k: 'session', label: 'Session', num: 1, val: v('session'), fmt: hms, tip: COL.session.tip },
       { k: 'online', label: 'Online', num: 1, val: v('online'), fmt: hms, tip: COL.online.tip }, { k: 'talkT', label: 'Talk', num: 1, val: v('talkT'), fmt: hms },
       { k: 'wrap', label: 'Wrap-up', num: 1, val: v('wrap'), fmt: hms }].concat(S.has.meeting ? [{ k: 'meeting', label: 'Meetings', num: 1, val: v('meeting'), fmt: hms, tip: COL.meeting.tip }] : []).concat([
       { k: 'other', label: 'Other statuses', num: 1, val: v('other'), fmt: hms, tip: COL.other.tip },
       { k: 'work', label: 'Work time', num: 1, val: v('work'), fmt: hms, tip: workTip() },
-      { k: 'short', label: 'Short', num: 1, val: function (r) { return avg ? (r.days ? r.short / r.days : null) : r.short; }, fmt: function (x, r) { return r.shortDays ? hms(x) + ' · ' + r.shortDays + ' of ' + r.days + ' days' : '—'; }, cls: function (r) { return r.shortDays ? 'bad' : ''; }, tip: 'Short\nPer day: the shortfall averaged over days worked. Totals: the sum. Both list how many days were short.' },
-      { k: 'why', label: 'Why short', val: function (r) { return r.shortDays ? r.lessLogin - r.overAway : null; }, noFoot: 1, html: function (r) { return r.shortDays ? '<span class="small" style="display:block;min-width:220px">' + esc(whyShort(r.lessLogin / r.shortDays, r.overAway / r.shortDays) || 'just under target') + ' on an average short day</span>' : ''; }, tip: dayCols()[2].tip },
       COL.util, COL.occ, COL.bar]);
-    var rule = 'Work time = Session + Wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' + Meetings' : '') + '. A day is short when work time is more than ' + msf(CFG.SHORT_GRACE_SEC) + ' min under ' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' (' + hms(CFG.ACCEPTABLE_TIME_SEC / 2) + ' on a partial day, when login is under ' + hms(CFG.PARTIAL_DAY_LOGIN_SEC) + ').';
+    var rule = 'Work time = Session + Wrap-up' + (CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting ? ' + Meetings' : '') + '. Login time = Work time + Other statuses (breaks, lunch, away).';
     return notesHTML() + checksNote(rows) +
       '<div class="note" style="margin-bottom:14px">' + esc(rule) + ' Outbound minutes are already inside Talk time, so they’re never added again. <button class="link" data-act="nav" data-page="guide">How it’s calculated</button></div>' +
       '<div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Show"><button data-act="timeView" data-v="avg" aria-pressed="' + avg + '">Per day</button><button data-act="timeView" data-v="total" aria-pressed="' + !avg + '">Totals</button></div>' + legend() + '</div>' +
       '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>' + (avg ? 'Average day per agent' : 'Totals per agent') + '</h2><span class="small muted">' + esc(scopeLabel()) + '</span></div>' + table('time', cols, agents, { click: 'openAgent', foot: team }) + '</section>';
   };
 
-  function logRows() { return scopeRows().filter(function (r) { return (S.logAgent === 'all' || r.name === S.logAgent) && (!S.logShort || derive(r).short > 0); }); }
+  function logRows() { return scopeRows().filter(function (r) { return (S.logAgent === 'all' || r.name === S.logAgent) && true; }); }
   PAGES.log = function () {
     var w = needData(); if (w) return w;
     var list = logRows().map(dayObj);
@@ -1516,10 +1506,10 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
       COL.login, COL.session, COL.online, COL.talkT, COL.wrap].concat(S.has.meeting ? [COL.meeting] : []).concat([COL.other]).concat(dayCols()).concat([COL.inbound, COL.outbound, COL.offered, COL.answer, COL.aht]);
     return notesHTML() +
       '<div class="filters"><div class="f"><label for="log-agent">Agent</label><select id="log-agent" class="input input-sm" data-change="logAgent"><option value="all">All agents</option>' + S.agents.map(function (n) { return '<option' + (n === S.logAgent ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></div>' +
-      '<label class="check-inline" style="align-self:center"><input type="checkbox" id="log-short" data-change="logShort"' + (S.logShort ? ' checked' : '') + '>Only short days</label><span class="spacer"></span>' +
+      '<span class="spacer"></span>' +
       '<button class="btn" data-act="exportCsv"' + (list.length ? '' : ' disabled') + '>' + icon('download') + 'Export CSV</button></div>' +
       '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>' + plural(list.length, 'agent-day') + '</h2><span class="small muted">' + esc(scopeLabel()) + ' · times in h:mm:ss</span></div>' +
-      (list.length ? table('log', cols, list, { click: 'openAgent', limit: per, offset: S.logPage * per }) : emptyState('No days match', 'Change the agent or turn off “Only short days”.')) +
+      (list.length ? table('log', cols, list, { click: 'openAgent', limit: per, offset: S.logPage * per }) : emptyState('No days match', 'Pick another agent or period.')) +
       (pages > 1 ? '<div class="pager"><span>Page ' + (S.logPage + 1) + ' of ' + pages + '</span><button class="btn btn-sm" data-act="logPage" data-d="-1"' + (S.logPage ? '' : ' disabled') + '>Previous</button><button class="btn btn-sm" data-act="logPage" data-d="1"' + (S.logPage < pages - 1 ? '' : ' disabled') + '>Next</button></div>' : '') + '</section>';
   };
 
@@ -1539,7 +1529,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
     return notesHTML() +
       '<section class="card"><div class="card-h"><h2>How problem days are handled</h2></div>' +
       '<p class="small" style="margin:0 0 10px;max-width:80ch">High-severity problems (session longer than login, or login over ' + hms(CFG.MAX_LOGIN_SEC) + ') usually mean the phone system logged the day wrong, which distorts the averages. Their calls still count for calls, answer rate and AHT either way. Medium and low problems are shown for review only.</p>' +
-      '<label class="check-inline"><input type="checkbox" data-change="excl"' + (S.excludeFlagged ? ' checked' : '') + '>Leave high-severity days out of the time numbers (login, session, work time, short days, utilization, occupancy)</label></section>' +
+      '<label class="check-inline"><input type="checkbox" data-change="excl"' + (S.excludeFlagged ? ' checked' : '') + '>Leave high-severity days out of the time numbers (login, session, work time, utilization, occupancy)</label></section>' +
       '<div class="seg" role="group" aria-label="Problem type">' + chips.map(function (c) { return '<button data-act="checkCode" data-v="' + c[0] + '" aria-pressed="' + (S.checkCode === c[0]) + '">' + esc(c[1]) + ' · ' + c[2] + '</button>'; }).join('') + '</div>' +
       '<section class="card card-flush"><div class="card-h" style="padding:14px 16px 0"><h2>' + plural(list.length, 'agent-day') + ' to check</h2><span class="small muted">' + esc(scopeLabel()) + ' · fix these in the sheet; the hub picks up the change on the next sync</span></div>' +
       (list.length ? table('checks', cols, list, { click: 'openAgent', noExcl: 1 }) : emptyState('No data problems', 'Every agent-day in this period passes the checks.')) + '</section>';
@@ -1547,7 +1537,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
 
   PAGES.guide = function () {
     var ex = null;
-    if (S.loaded && S.has.login) { var cand = S.rows.filter(function (r) { return r.login > 0 && !flagsOf(r).length && r.outbound > 0 && derive(r).short; }); ex = cand[cand.length - 1] || S.rows.filter(function (r) { return r.login > 0 && !flagsOf(r).length; }).pop() || null; }
+    if (S.loaded && S.has.login) { var cand = S.rows.filter(function (r) { return r.login > 0 && !flagsOf(r).length && r.outbound > 0; }); ex = cand[cand.length - 1] || S.rows.filter(function (r) { return r.login > 0 && !flagsOf(r).length; }).pop() || null; }
     var mt = CFG.COUNT_MEETINGS_AS_WORK && S.has.meeting;
     function d(id, t, body, f, sw) { return '<div class="def" id="' + id + '"><h3>' + (sw ? '<i class="i-' + sw + '" aria-hidden="true"></i>' : '') + esc(t) + '</h3><div>' + body + (f ? '<div class="formula">' + esc(f) + '</div>' : '') + '</div></div>'; }
     var exHTML = '';
@@ -1558,8 +1548,6 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
         '<span>Online</span><b>' + hms(ex.online) + '</b><span>+ Talk time</span><b>' + hms(ex.talk) + '</b><span class="tot">= Session time</span><b class="tot">' + hms(ex.session) + '</b>' +
         '<span>+ Wrap-up total</span><b>' + hms(ex.wrap) + '</b>' + (mt ? '<span>+ Meetings</span><b>' + hms(ex.meeting) + '</b>' : '') + '<span class="tot">= Work time</span><b class="tot">' + hms(dv.work) + '</b></div>' +
         '<div class="ex"><span>Login time</span><b>' + hms(ex.login) + '</b><span>− Work time</span><b>' + hms(dv.work) + '</b><span class="tot">= Time off work</span><b class="tot">' + hms(ex.login - dv.work) + '</b>' +
-        '<span>Target' + (dv.partial ? ' (partial day)' : '') + '</span><b>' + hms(dv.target) + '</b><span>Short by</span><b>' + (dv.short ? hms(dv.short) : 'Not short') + '</b>' +
-        (dv.short ? '<span>Logged in less than ' + hms(dv.target + dv.allow) + '</span><b>' + hms(dv.lessLogin) + '</b><span>Over the ' + hms(dv.allow) + ' break allowance</span><b>' + hms(dv.overAway) + '</b>' : '') +
         '<span>Utilization</span><b>' + pct(x.util) + '</b><span>Occupancy</span><b>' + pct(x.occ) + '</b></div></div></section>';
     }
     return '<section class="card"><div class="card-h"><h2>Time</h2><span class="small muted">How a logged-in day splits up</span></div>' + legend() +
@@ -1571,11 +1559,9 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
       (S.has.meeting ? d('meeting', 'Meetings', '<p>The report’s Meeting total: coaching, huddles and training. ' + (mt ? 'It counts as work time.' : 'It doesn’t count as work time (COUNT_MEETINGS_AS_WORK is off).') + '</p>', '', 'meet') : '') +
       d('other', 'Other statuses', '<p>Logged in but not available, in wrap-up or in a meeting: usually breaks, lunch or away. The report has no column for it, so it’s found by subtracting. A negative number means the sheet’s parts add up to more than the login time; the Data checks page lists those days.</p>', 'Other statuses = Login time − Session time − Wrap-up total' + (S.has.meeting ? ' − Meetings' : '')) +
       '</section>' +
-      '<section class="card"><div class="card-h"><h2>The “short” rule</h2></div>' +
-      d('work', 'Work time', '<p>The time counted against the target.</p>', 'Work time = Session time + Wrap-up total' + (mt ? ' + Meetings' : '')) +
-      d('target', 'Target', '<p>' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' of work time a day. A day with login under ' + hms(CFG.PARTIAL_DAY_LOGIN_SEC) + ' is a partial day (a half-day leave or an early release, usually) and is judged against half: ' + hms(CFG.ACCEPTABLE_TIME_SEC / 2) + '.</p>', 'Short by = Target − Work time, when that’s more than ' + msf(CFG.SHORT_GRACE_SEC) + ' min') +
-      d('why', 'Why short', '<p>Each short day is split into two causes, using a ' + hms(CFG.BREAK_ALLOWANCE_SEC) + ' allowance for lunch and breaks (so a full day expects ' + hms(CFG.ACCEPTABLE_TIME_SEC + CFG.BREAK_ALLOWANCE_SEC) + ' logged in). The two parts add up to the shortfall when both apply.</p>', 'Logged in less = (Target + allowance) − Login time\nOver the allowance = (Login time − Work time) − allowance') +
-      d('excluded', 'Days left out', '<p>Days with a high-severity data problem aren’t judged and don’t count in the time numbers, unless you turn that off on the Data checks page. Their calls still count.</p>', '') +
+      '<section class="card"><div class="card-h"><h2>Work time</h2></div>' +
+      d('work', 'Work time', '<p>Time spent working: available or on calls, in wrap-up' + (mt ? ', or in meetings' : '') + '. The rest of login time is other statuses.</p>', 'Work time = Session time + Wrap-up total' + (mt ? ' + Meetings' : '')) +
+      d('excluded', 'Days left out', '<p>Days with a high-severity data problem don’t count in the time numbers, unless you turn that off on the Data checks page. Their calls still count.</p>', '') +
       '</section>' + exHTML +
       '<section class="card"><div class="card-h"><h2>Calls and rates</h2></div>' +
       d('util', 'Utilization', '<p>Share of logged-in time spent talking. It matches the report’s Utilization (%) column.</p>', 'Utilization = Talk time ÷ Login time × 100') +
@@ -1584,7 +1570,7 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
       d('offered', 'Offered calls', '<p>Inbound calls the system routed to the agent, whether or not they picked up. There’s no exact formula: answered calls plus missed dials explain most of it, and the rest are usually calls picked up by another agent or abandoned before they counted as missed.</p>', 'Offered calls ≈ Inbound calls + Missed dials + other unanswered offers') +
       d('answer', 'Answer rate', '<p>Share of offered calls the agent answered. Target ' + pct(CFG.ANSWER_RATE_TARGET, 0) + '.</p>', 'Answer rate = Inbound calls ÷ Offered calls × 100') +
       d('compare', 'Comparisons', '<p>Changes are measured against the period just before. A month is compared with the month before; a month in progress with the same days of the month before; any other range with the same number of days right before it. All time has no comparison.</p>', '') +
-      '</section><p class="small muted">Targets are set in the configuration block at the top of this file: AHT ' + msf(CFG.AHT_TARGET_SEC) + ', answer rate ' + pct(CFG.ANSWER_RATE_TARGET, 0) + ', ' + hms(CFG.ACCEPTABLE_TIME_SEC) + ' of work time a day, ' + hms(CFG.BREAK_ALLOWANCE_SEC) + ' break allowance, ' + msf(CFG.SHORT_GRACE_SEC) + ' min grace, partial day under ' + hms(CFG.PARTIAL_DAY_LOGIN_SEC) + ' of login.</p>';
+      '</section><p class="small muted">Targets are set in the configuration block at the top of this file: AHT ' + msf(CFG.AHT_TARGET_SEC) + ', answer rate ' + pct(CFG.ANSWER_RATE_TARGET, 0) + '.</p>';
   };
 
   // ---------------- roster ----------------
@@ -1653,12 +1639,11 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
       { k: 'tenure', label: 'Tenure', val: function (a) { return tenureDays(a.hire); }, html: function (a) { return esc(tenure(a.hire)) + (isNewHire(a) ? '<div><span class="b info">New hire</span></div>' : ''); } },
       { k: 'shift', label: 'Shift', val: function (a) { return shiftText(a); }, html: function (a) { return esc(shiftText(a)) + (a.labels.length ? '<div class="small muted">' + esc(a.labels.join(', ')) + '</div>' : ''); } }
     ].concat(DOW.map(function (dname, i) { return { k: 'd' + i, label: dname.slice(0, 3) + (i === t ? ' · today' : ''), val: function (a) { return a.days[i].kind === 'rest' ? 'z' + a.days[i].label : a.days[i].label; }, html: function (a) { return schChip(a.days[i]); }, cls: function () { return i === t ? 'today-col' : ''; } }; }))
-      .concat([{ k: 'on', label: 'Days on', num: 1, val: function (a) { return a.on; }, fmt: function (v, a) { return v + ' / 7'; }, cls: function (a) { return a.on !== 5 ? 'warn' : ''; }, tip: 'Days on\nScheduled days in the week. Highlighted when it isn’t 5.' }]);
     // coverage: who is on each day
     var cov = '<tr class="cov"><td>Coverage</td><td></td><td></td><td></td>' + DOW.map(function (d, i) {
       var dd = R.filter(function (a) { return a.days[i].kind === 'day'; }).length, nn = R.filter(function (a) { return a.days[i].kind === 'night'; }).length;
       return '<td class="' + (i === t ? 'today-col' : '') + '"><span class="small"><b>' + dd + '</b> day<br><b>' + nn + '</b> night</span></td>';
-    }).join('') + '<td></td></tr>';
+    }).join('') + '</tr>';
     var tbl = table('rost', cols, R, { click: 'openAgent' }).replace('</tbody>', '</tbody><tfoot>' + cov + '</tfoot>');
     return notesHTML() + strip +
       '<section class="card card-flush rost-wrap"><div class="card-h" style="padding:14px 16px 0"><h2>Roster and weekly schedule</h2><span class="small muted">From the “' + esc(CFG.ROSTER_TAB) + '” tab · times in Eastern time · click an agent for their scorecard</span></div>' + tbl + '</section>' +
@@ -1734,9 +1719,9 @@ table.t tfoot tr.cov td:first-child{font-weight:700}
   ACT.logPage = function (el) { S.logPage += +el.dataset.d; render(); var m = $('#main'); if (m) m.scrollTop = 0; };
   ACT.exportCsv = function () {
     var rows = logRows();
-    var head = ['Date', 'Agent', 'Shift', 'Login time', 'Session time', 'Online', 'Talk time', 'Wrap-up total', 'Meetings', 'Other statuses', 'Work time', 'Partial day', 'Short by', 'Logged in less', 'Over break allowance', 'Data checks', 'Inbound calls', 'Outbound calls', 'Offered calls', 'Answer rate (%)', 'AHT', 'Utilization (%)', 'Occupancy (%)'];
+    var head = ['Date', 'Agent', 'Shift', 'Login time', 'Session time', 'Online', 'Talk time', 'Wrap-up total', 'Meetings', 'Other statuses', 'Work time', 'Data checks', 'Inbound calls', 'Outbound calls', 'Offered calls', 'Answer rate (%)', 'AHT', 'Utilization (%)', 'Occupancy (%)'];
     var q = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-    var lines = [head.join(',')].concat(rows.map(function (r) { var x = dayObj(r), dv = x.d; return [r.key, r.name, SHIFT_LABEL[r.shift] || '', hms(r.login), hms(r.session), hms(r.online), hms(r.talk), hms(r.wrap), S.has.meeting ? hms(r.meeting) : '', hms(x.other), hms(dv.work), dv.partial ? 'Yes' : '', dv.short ? hms(dv.short) : '', dv.short ? hms(dv.lessLogin) : '', dv.short ? hms(dv.overAway) : '', x.flags.map(function (f) { return f.label; }).join('; ') + (dv.excluded ? ' (left out)' : ''), r.inbound, r.outbound, r.offered == null ? '' : r.offered, x.answer == null ? '' : (x.answer * 100).toFixed(1), msf(x.aht), x.util == null ? '' : (x.util * 100).toFixed(1), x.occ == null ? '' : (x.occ * 100).toFixed(1)].map(q).join(','); }));
+    var lines = [head.join(',')].concat(rows.map(function (r) { var x = dayObj(r), dv = x.d; return [r.key, r.name, SHIFT_LABEL[r.shift] || '', hms(r.login), hms(r.session), hms(r.online), hms(r.talk), hms(r.wrap), S.has.meeting ? hms(r.meeting) : '', hms(x.other), hms(dv.work), x.flags.map(function (f) { return f.label; }).join('; ') + (dv.excluded ? ' (left out)' : ''), r.inbound, r.outbound, r.offered == null ? '' : r.offered, x.answer == null ? '' : (x.answer * 100).toFixed(1), msf(x.aht), x.util == null ? '' : (x.util * 100).toFixed(1), x.occ == null ? '' : (x.occ * 100).toFixed(1)].map(q).join(','); }));
     var blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'Call_Report_' + S.from + '_to_' + S.to + (S.logAgent !== 'all' ? '_' + S.logAgent.replace(/\s+/g, '_') : '') + '.csv';
     document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
